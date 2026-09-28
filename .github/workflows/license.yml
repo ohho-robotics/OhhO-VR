@@ -1,0 +1,13 @@
+name: Licence
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  license:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Root licence is Apache-2.0 and Meta notices stay
+        run: bash scripts/check-license.sh
