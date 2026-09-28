@@ -18,13 +18,6 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using UnityEngine;
-using Debug = UnityEngine.Debug;
-using RO = Meta.XR.RuntimeOptimizer.Core;
-
 #if !(UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN || UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX || (UNITY_ANDROID && !UNITY_EDITOR))
 #define OVRPLUGIN_UNSUPPORTED_PLATFORM
 #endif
@@ -37,6 +30,13 @@ using RO = Meta.XR.RuntimeOptimizer.Core;
 #define OVRPLUGIN_EDITOR_MOCK_ENABLED
 #undef OVRPLUGIN_UNSUPPORTED_PLATFORM
 #endif
+
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using UnityEngine;
+using Debug = UnityEngine.Debug;
+using RO = Meta.XR.RuntimeOptimizer.Core;
 
 namespace Meta.XR.RuntimeOptimizer.Core
 {
