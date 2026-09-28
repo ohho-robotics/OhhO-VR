@@ -107,7 +107,7 @@ One persistent GameObject holding the platform services (each is a singleton):
 | Column | Contents |
 |---|---|
 | Left | Robot name, connection (IP/port/Connect/Disconnect/status dot), telemetry (pose, velocity, arm, mode), control hints, **< Garage** |
-| Center | Camera feed (`CameraFeedController` → MJPEG/WebRTC), camera name, **Next Camera** |
+| Center | Camera feed (`CameraFeedController` → MJPEG; WebRTC is roadmap), camera name, **Next Camera** |
 | Right | Dataset recording (Start / Stop & Save / Discard, live status), **Export to Robot** (POSTs JSONL to the VR bridge at `:8765`) |
 
 ---
