@@ -1,6 +1,6 @@
 # Multi-Robot VR Teleoperation — Architecture & Build Plan
 
-> Status: **All phases implemented (0a–0c + 1–5)** — full multi-robot VR teleop stack: platform contract, app shell, garage sync, glass UI + passthrough, spatial add-robot flow, profile-driven teleop, generalized drive + manipulation, WebRTC video, profile-driven recording, robot-side IK, per-robot calibration, quick-resume, onboarding, tests
+> Status: **Design note, not a ship list.** This file describes the intended multi-robot teleop stack. It is not a claim that every phase below is finished in this repository. Video in the headset client is MJPEG. WebRTC signaling is roadmap (`Assets/Scripts/Video/WebRtcVideoSource.cs` does not complete the handshake, and `com.unity.webrtc` is not a package dependency). The robot ROS workspace is not in this repo.
 > Target headset: **Meta Quest 3 / 3S** (mixed reality, passthrough)
 > Scope: extend `vr_app/` from a single hardcoded OmniBot controller into a
 > **catalog-driven, any-robot** mixed-reality teleoperation app whose robot list,
@@ -141,7 +141,7 @@ the website agree on *which robots exist* and *how each one is controlled*.
 
 ## 2. What already exists (starting point)
 
-### 2.1 VR app — `vr_app/` (Unity 2023.3 LTS, Meta XR SDK 60, Quest 3)
+### 2.1 VR app — this repo (Unity 6000.5.2f1, Meta XR SDK 203, Quest 3)
 
 | Area | Files | Notes |
 |---|---|---|
@@ -154,9 +154,9 @@ the website agree on *which robots exist* and *how each one is controlled*.
 | Recording | `Recording/EpisodeManager.cs`, `Recording/DatasetRecorder.cs` | 30 Hz JSONL, export to the `omnibot_vr` ROS bridge. |
 | Constants | `Core/RobotConfig.cs` | **Single-robot constants — the thing this plan generalizes.** |
 
-Current Unity packages (`vr_app/Packages/manifest.json`): OpenXR 1.10, XR
-Management, Input System, TextMeshPro, uGUI, Newtonsoft JSON, NativeWebSocket,
-Meta XR SDK Core/Interaction/Interaction.OVR 60.
+Current Unity packages (`Packages/manifest.json`): OpenXR 1.17.1, XR
+Management, Input System, TextMeshPro, uGUI, Newtonsoft JSON 3.2.2, NativeWebSocket,
+Meta XR SDK Core/Interaction/Interaction.OVR 203.0.0.
 
 ### 2.2 Website — `website/lib/garage/` & `website/lib/connect/`
 
@@ -220,13 +220,13 @@ fallback for offline.
 
 | Concern | Choice | Notes |
 |---|---|---|
-| Engine | Unity 2023.3 LTS + URP | Already pinned. |
+| Engine | Unity 6000.5.2f1 + OpenXR | Pinned in `ProjectSettings/ProjectVersion.txt`. Built-in render pipeline, not URP. |
 | XR runtime | OpenXR + Meta feature group | Already in manifest. |
-| Meta SDK | Meta XR Core/Interaction SDK 60 | Passthrough + hand tracking. |
+| Meta SDK | Meta XR Core/Interaction SDK 203.0.0 | Vendored under `Packages/`. Oculus SDK licence, not Apache-2.0. |
 | **Passthrough MR** | `OVRPassthroughLayer` | Always-on background = "see everything through passthrough." |
 | **Scene understanding** | **MRUK** — add `com.meta.xr.mrutilitykit` | Room mesh + spatial anchors → pin the virtual robot workspace to a real surface; world-lock panels. |
 | Hand tracking | Meta Hand Tracking (OVRHand); optionally `com.unity.xr.hands` for OpenXR-portable joints | Wrist pose + pinch. |
-| UI | uGUI + TextMeshPro (present); world-space curved canvases | Glass shader via URP Shader Graph. |
+| UI | uGUI + TextMeshPro | World-space canvases. A URP glass shader is not in this project. |
 | Account link (optional) | Meta Platform SDK or device-code flow | Pull the user's garage from their OhhO account. |
 
 ### 4.2 Networking / robot link
@@ -234,7 +234,7 @@ fallback for offline.
 | Concern | Choice | Notes |
 |---|---|---|
 | Control + telemetry | rosbridge_suite over NativeWebSocket (present) | Universal ROS 2 contract; topics from `RobotProfile.rosTopics`. |
-| Live video | MJPEG via `web_video_server` (present) → upgrade to **WebRTC** (`com.unity.webrtc`) | WebRTC ≈ sub-100 ms first-person telepresence. |
+| Live video | MJPEG via `web_video_server` on the robot (not in this repo). WebRTC is roadmap. | `com.unity.webrtc` is not in `Packages/manifest.json`. |
 | Non-ROS robots | per-robot **bridge node** on the robot side | Matches the platform's "any robot, any transport" stance; VR app stays ROS-only. |
 | JSON | Newtonsoft (present) | rosbridge v2 protocol. |
 
