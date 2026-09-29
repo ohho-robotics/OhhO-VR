@@ -1,3 +1,5 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 # OmniBot VR Controller
 
 This repository is the **Meta Quest headset client only**. It does not contain the OhhO website, the Android app, or the robot's ROS 2 workspace.
@@ -282,3 +284,11 @@ The visionOS port is planned for a future release. Key design decisions:
 | Arm not moving | Toggle arm enable with left-hand thumbs-up, check `/arm/enable` topic |
 | UI looks low-res | `VRGraphicsBoost` sets 1.5× eye resolution at startup; check it exists on `[OhhO VR App]` |
 | Text renders magenta | TMP font materials were repaired in this branch; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
+
+---
+
+## Licence
+
+First-party code in this repository is [Apache License 2.0](LICENSE).
+
+The vendored Meta XR SDK is not Apache-2.0. It stays under the Oculus SDK License Agreement (`Packages/com.meta.xr.sdk.core/LICENSE.md`, `Packages/com.meta.xr.sdk.interaction/LICENSE.md`). Other third-party notices are in [NOTICE](NOTICE).

@@ -1,0 +1,31 @@
+OhhO VR headset client
+Copyright 2026 OhhO Robotics
+
+First-party code in this repository (including Assets/Scripts) is under
+the Apache License, Version 2.0. See LICENSE.
+
+The following vendored packages keep their own licences. This repository
+does not relicense them.
+
+Meta XR SDK Core
+  Path: Packages/com.meta.xr.sdk.core/
+  Notice: Packages/com.meta.xr.sdk.core/LICENSE.md
+  Licence: Oculus SDK License Agreement
+  https://developers.meta.com/horizon/licenses/oculussdk/
+
+Meta XR Interaction SDK
+  Path: Packages/com.meta.xr.sdk.interaction/
+  Notice: Packages/com.meta.xr.sdk.interaction/LICENSE.md
+  Licence: Oculus SDK License Agreement
+  https://developers.meta.com/horizon/licenses/oculussdk/
+  That package also ships third-party notices under
+  Packages/com.meta.xr.sdk.interaction/Runtime/ThirdParty/ and
+  Packages/com.meta.xr.sdk.interaction/Runtime/Sample/ThirdParty/.
+
+MCP for Unity (Coplay)
+  Path: Packages/com.coplaydev.unity-mcp/
+  The package manifest licensesUrl is
+  https://github.com/CoplayDev/unity-mcp/blob/main/LICENSE
+  which is the MIT License, Copyright (c) 2025 CoplayDev.
+  This repository does not include a copy of that MIT text inside the
+  package folder and does not relicense the package.
