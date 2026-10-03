@@ -43,8 +43,9 @@ hides/shows the whole screen with the **left-controller B** button.
 
 The TMP default font reference (`TextMesh Pro/Resources/TMP Settings.asset`)
 must point at **LiberationSans SDF**, and the font materials must use the
-**`TextMeshPro/Distance Field`** shader — both were repaired in this branch
-(magenta text = broken shader reference; empty text = missing default font).
+**`TextMeshPro/Distance Field`** shader (magenta text = broken shader reference;
+empty text = missing default font). If they regress, re-assign
+`TextMeshPro/Distance Field` to the LiberationSans SDF materials.
 If you import Space Grotesk / Inter / JetBrains Mono later, create TMP font
 assets for them and an **OhhO Font Set** so the `ThemeApplier` can restyle.
 

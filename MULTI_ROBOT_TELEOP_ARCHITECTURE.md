@@ -22,7 +22,7 @@ re-typing IPs, models, or names. The shared substrate:
 - **Catalog & branding** — served as static JSON the website generates, so all
   surfaces render robots and UI identically.
 
-### Implemented in this branch (Phase 0a + 0b)
+### Implemented (Phase 0a + 0b)
 
 - **Website** — `Product.vr` flag + **OhhO Pilot** tagged; `lib/vr/manifest.ts` →
   `public/vr/manifest.json` (branding + Supabase auth + VR products) and
@@ -47,7 +47,7 @@ Next (Phase 2): wire a selected garage robot's profile into the control layer
 not built in CI (no Unity toolchain); UI controllers are the wiring layer for
 scene/prefab work in the editor._
 
-### Implemented in this branch (Phase 2 — profile-driven teleop)
+### Implemented (Phase 2 — profile-driven teleop)
 
 - **`RobotProfile`** — runtime capability model (C# mirror of
   `website/lib/garage/robot-config.ts` `RobotConfig`): drive kind, arm DOF,
@@ -76,7 +76,7 @@ scene/prefab work in the editor._
   profile → `TeleopController.StartTeleop(profile)` → routes to the teleop view.
   Selecting a robot in the garage now starts driving it.
 
-### Implemented in this branch (Phase 3 — generalized drive + manipulation)
+### Implemented (Phase 3 — generalized drive + manipulation)
 
 - **`DriveSchemeBase`** — abstract base class extracting the shared e-stop
   (both-grips), turbo (right grip), dead-zone, 20 Hz publish-timing and
@@ -151,7 +151,7 @@ the website agree on *which robots exist* and *how each one is controlled*.
 | Arm IK | `Input/ArmIKSolver.cs` | CCD, pure C#, 20 Hz, 50 iters, 1 mm tol, 6 joints clamped. **SO-101 geometry hardcoded.** |
 | Hand control | `Input/HandTrackingArmController.cs`, `Input/GestureDetector.cs` | Right-hand pose → IK target, pinch → gripper. |
 | UI | `UI/HUDManager.cs`, `UI/{Connection,Telemetry,Control,Recording}Panel.cs`, `UI/CameraFeedViewer.cs` | Floating panels; MJPEG camera feed. |
-| Recording | `Recording/EpisodeManager.cs`, `Recording/DatasetRecorder.cs` | 30 Hz JSONL, export to the `omnibot_vr` ROS bridge. |
+| Recording | `Recording/EpisodeManager.cs`, `Recording/DatasetRecorder.cs` | 30 Hz JSONL, export to a robot-side HTTP bridge on port 8765 (not in this repo). |
 | Constants | `Core/RobotConfig.cs` | **Single-robot constants — the thing this plan generalizes.** |
 
 Current Unity packages (`Packages/manifest.json`): OpenXR 1.17.1, XR

@@ -18,6 +18,10 @@ if grep -nE '2023\.3\.0f1' README.md SCENE_SETUP.md MULTI_ROBOT_TELEOP_ARCHITECT
   fail "a public doc still pins Unity 2023.3.0f1"
 fi
 
+if grep -nEi 'omnibot_vr|in this branch' README.md SCENE_SETUP.md MULTI_ROBOT_TELEOP_ARCHITECTURE.md; then
+  fail "a public doc still names omnibot_vr or says \"in this branch\""
+fi
+
 grep -q '6000.5.2f1' README.md || fail "README does not name Unity 6000.5.2f1"
 grep -q '203.0.0' README.md || fail "README does not name Meta XR SDK 203.0.0"
 grep -q 'Assets/scene1.unity' README.md || fail "README does not name Assets/scene1.unity"

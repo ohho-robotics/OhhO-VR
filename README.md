@@ -79,7 +79,25 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ---
 
-## 4. Setup: Sign In & Connect
+## 4. Edit-mode tests
+
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI does not run them because the Unity editor needs a licence. Run them locally in batch mode.
+
+Windows:
+
+```
+"C:\Program Files\Unity\Hub\Editor\6000.5.2f1\Editor\Unity.exe" -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmode -testFilter OmniBot.VR.Tests -testResults <xml> -logFile <log>
+```
+
+Linux:
+
+```
+unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmode -testFilter OmniBot.VR.Tests -testResults <xml> -logFile <log>
+```
+
+---
+
+## 5. Setup: Sign In & Connect
 
 1. Put on the headset and launch the app.
 2. The **OhhO Screen** appears in front of you with the **Login** page.
@@ -98,7 +116,7 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 
 ---
 
-## 5. Controls Reference
+## 6. Controls Reference
 
 ### Base Movement
 
@@ -123,7 +141,7 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 
 ---
 
-## 6. Hand Tracking Arm Workspace
+## 7. Hand Tracking Arm Workspace
 
 The arm workspace maps the right hand's position within a 0.40 m radius sphere
 (centered on `handWorkspaceOrigin`) to the SO-101 arm's reachable space.
@@ -155,7 +173,7 @@ arm's base position (0.35 m above the robot base by default).
 CCD IK runs at 20 Hz with max 50 iterations and 1 mm tolerance.
 All 6 joints are clamped to their configured limits at every step.
 
-**Hand-tracking correctness (fixed in this branch):** both hand prefabs run
+**Hand-tracking settings:** both hand prefabs run
 with `_updateRootPose` + `_updateRootScale` + `_applyBoneTranslations` enabled
 (hand mesh exactly follows the tracked wrist — no offset), the hand skinned
 meshes use `updateWhenOffscreen` (prevents per-eye frustum culling that made
@@ -164,7 +182,7 @@ manifest requests **HIGH** hand-tracking frequency.
 
 ---
 
-## 7. Display Quality
+## 8. Display Quality
 
 `VRGraphicsBoost` (on the bootstrap GameObject) applies at startup:
 
@@ -180,7 +198,7 @@ Tweak the values in the inspector on `[OhhO VR App] → VRGraphicsBoost`.
 
 ---
 
-## 8. Dataset Recording Workflow
+## 9. Dataset Recording Workflow
 
 1. Open the **Teleop** page (pick a robot in the garage).
 2. Press **Start Recording**. The status shows the episode name + live timer.
@@ -194,14 +212,14 @@ Tweak the values in the inspector on `[OhhO VR App] → VRGraphicsBoost`.
 
 After recording, export episodes to the robot for training:
 
-1. Ensure the robot VR bridge is running (see section 9).
+1. Ensure the robot VR bridge is running (see section 10).
 2. Press **Export to Robot** in the Teleop page.
 3. Each JSONL file is uploaded via HTTP POST to `http://<robotIp>:8765/upload_episode`.
 4. Files are saved to `~/datasets/vr_episodes/` on the robot PC.
 
 ---
 
-## 9. Robot-side bridge (not in this repo)
+## 10. Robot-side bridge (not in this repo)
 
 Export and recording signals expect an HTTP service on the robot PC, port `8765`. That service is not in this checkout. When a bridge is running there, the headset uses:
 - `GET  http://<robot>:8765/health` — health check
@@ -216,7 +234,7 @@ and mirrors `/arm/joint_states`, `/odom`, and `/cmd_vel/teleop` to `/vr/obs`
 
 ---
 
-## 10. Apple Vision Pro Roadmap
+## 11. Apple Vision Pro Roadmap
 
 The visionOS port is planned for a future release. Key design decisions:
 
@@ -231,7 +249,7 @@ The visionOS port is planned for a future release. Key design decisions:
 
 ---
 
-## 11. Project Structure
+## 12. Project Structure
 
 ```
 ./
@@ -271,19 +289,19 @@ The visionOS port is planned for a future release. Key design decisions:
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Problem | Solution |
 |---|---|
 | Status indicator stays red | Check robot IP, verify ROSBridge is running on port 9090, check `ROS_DOMAIN_ID=30` |
 | Hand tracking not working | Ensure Hand Tracking is enabled in Quest developer settings and in XR Plug-in Management; the manifest already requests the `HAND_TRACKING` permission (HIGH frequency) |
-| Hand mesh offset from real hand | Fixed in this branch — hand skeletons update root pose/scale/bone translations; re-run **OmniBot → Rebuild Unified OhhO Screen** if it regresses |
-| Hand visible in one eye only | Fixed in this branch — hand meshes use `updateWhenOffscreen` so per-eye frustum culling can't drop them |
+| Hand mesh offset from real hand | The hand prefabs update root pose, scale, and bone translations; if it regresses, re-run **OmniBot → Rebuild Unified OhhO Screen** |
+| Hand visible in one eye only | The hand meshes use `updateWhenOffscreen` so per-eye frustum culling can't drop them |
 | Camera feed shows "No Signal" | Ensure `web_video_server` is running: `ros2 run web_video_server web_video_server` |
-| Export fails | Check VR bridge is running (`ros2 launch omnibot_vr vr_bridge.launch.py`) and firewall allows port 8765 |
+| Export fails | Check that an HTTP service answers on `http://<robot>:8765/health` and that the firewall allows port 8765; the bridge is not in this repo |
 | Arm not moving | Toggle arm enable with left-hand thumbs-up, check `/arm/enable` topic |
 | UI looks low-res | `VRGraphicsBoost` sets 1.5× eye resolution at startup; check it exists on `[OhhO VR App]` |
-| Text renders magenta | TMP font materials were repaired in this branch; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
+| Text renders magenta | The TMP font materials use `TextMeshPro/Distance Field`; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
 
 ---
 
