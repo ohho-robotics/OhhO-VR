@@ -81,7 +81,9 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI does not run them because the Unity editor needs a licence. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+
+CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
 Windows:
 
