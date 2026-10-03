@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  # unity-test-runner posts a test-results check on the commit.
+  checks: write
 
 jobs:
   editmode:
