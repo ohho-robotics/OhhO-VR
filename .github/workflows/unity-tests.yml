@@ -1,0 +1,58 @@
+name: Unity tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  editmode:
+    runs-on: ubuntu-latest
+    env:
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+    steps:
+      - name: Check whether Unity licence secrets are set
+        id: secrets
+        shell: bash
+        run: |
+          if [ -n "$UNITY_LICENSE" ] && [ -n "$UNITY_EMAIL" ] && [ -n "$UNITY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Unity tests were skipped because the secrets are not set. See README section 4 (Edit-mode tests)."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.available == 'true'
+
+      - uses: actions/cache@v4
+        if: steps.secrets.outputs.available == 'true'
+        with:
+          path: Library
+          key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-
+
+      - uses: game-ci/unity-test-runner@v4
+        id: tests
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.5.2f1
+          testMode: editmode
+          artifactsPath: test-results
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.secrets.outputs.available == 'true'
+        with:
+          name: editmode-test-results
+          path: ${{ steps.tests.outputs.artifactsPath }}
