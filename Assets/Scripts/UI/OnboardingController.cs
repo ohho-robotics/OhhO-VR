@@ -50,7 +50,7 @@ namespace OmniBot.VR.UI
             if (driveHintText != null) driveHintText.text = driveHint ?? "";
             if (manipHintText != null) manipHintText.text = manipHint ?? "No arm on this robot";
             if (safetyHintText != null)
-                safetyHintText.text = "Both grips: emergency stop · Release to clear";
+                safetyHintText.text = "Both grips: emergency stop (robot latches until Reset e-stop is confirmed). After a disconnect or removing the headset, press a grip again before driving.";
             onboardingPanel.SetActive(true);
         }
 
@@ -60,7 +60,7 @@ namespace OmniBot.VR.UI
             if (driveHintText != null) driveHintText.text = driveHint ?? "";
             if (manipHintText != null) manipHintText.text = manipHint ?? "No arm on this robot";
             if (safetyHintText != null)
-                safetyHintText.text = "Both grips: emergency stop · Release to clear";
+                safetyHintText.text = "Both grips: emergency stop (robot latches until Reset e-stop is confirmed). After a disconnect or removing the headset, press a grip again before driving.";
             if (onboardingPanel != null) onboardingPanel.SetActive(true);
         }
 

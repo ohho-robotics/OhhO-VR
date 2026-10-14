@@ -5,6 +5,7 @@ using OmniBot.VR.Video;
 using OmniBot.VR.Recording;
 using OmniBot.VR.Control.Drive;
 using OmniBot.VR.Control.Manip;
+using OmniBot.VR.Control.Safety;
 
 namespace OmniBot.VR.Control
 {
@@ -56,6 +57,14 @@ namespace OmniBot.VR.Control
         private IDriveScheme _drive;
         private IManipulationScheme _manip;
         private bool _teleopActive;
+        private readonly TeleopSafetySession _safety = new TeleopSafetySession();
+        private bool _hmdMounted = true;
+        private bool _appPaused;
+        private bool _appFocused = true;
+        private bool _inputFocused = true;
+
+        /// <summary>Heartbeat, safety latch, and post-reconnect deadman hold.</summary>
+        public TeleopSafetySession Safety => _safety;
 
         /// <summary>One-line drive control hint (for onboarding / HUD).</summary>
         public string DriveHint => _drive?.HudHint ?? "No drive on this robot";
@@ -77,11 +86,81 @@ namespace OmniBot.VR.Control
                 gestureDetector = FindObjectOfType<GestureDetector>();
         }
 
+        private void OnEnable()
+        {
+            OVRManager.HMDUnmounted += OnHmdUnmounted;
+            OVRManager.HMDMounted += OnHmdMounted;
+            OVRManager.InputFocusLost += OnInputFocusLost;
+            OVRManager.InputFocusAcquired += OnInputFocusAcquired;
+        }
+
+        private void OnDisable()
+        {
+            OVRManager.HMDUnmounted -= OnHmdUnmounted;
+            OVRManager.HMDMounted -= OnHmdMounted;
+            OVRManager.InputFocusLost -= OnInputFocusLost;
+            OVRManager.InputFocusAcquired -= OnInputFocusAcquired;
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            _appPaused = paused;
+            PushPresence(paused ? "app pause" : "app resume");
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            _appFocused = focused;
+            PushPresence(focused ? "focus acquired" : "focus lost");
+        }
+
+        private void OnHmdUnmounted()
+        {
+            _hmdMounted = false;
+            PushPresence("hmd unmounted");
+        }
+
+        private void OnHmdMounted()
+        {
+            _hmdMounted = true;
+            PushPresence("hmd mounted");
+        }
+
+        private void OnInputFocusLost()
+        {
+            _inputFocused = false;
+            PushPresence("focus lost");
+        }
+
+        private void OnInputFocusAcquired()
+        {
+            _inputFocused = true;
+            PushPresence("focus acquired");
+        }
+
+        private void PushPresence(string reason)
+        {
+            bool present = _hmdMounted && !_appPaused && _appFocused && _inputFocused;
+            IRobotLink link = _teleopActive ? Link : null;
+            if (_safety.SetOperatorPresent(present, reason, link) && link != null && link.IsConnected)
+            {
+                _drive?.Stop(link);
+                _manip?.Stop(link);
+            }
+        }
+
         private void Update()
         {
-            if (!_teleopActive || !Link.IsConnected) return;
+            if (!_teleopActive) return;
 
-            // ── Build the controller input snapshot ──────────────────────────────
+            var input = ReadInput();
+            _safety.Tick(Link, ref input, _drive, _manip, TickManipulation);
+            if (_safety.ConsumeLinkRestored())
+                AdvertiseTopics(Profile);
+        }
+
+        private TeleopInput ReadInput()
+        {
             Vector2 leftStick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
             Vector2 rightStick = OVRInput.Get(OVRInput.Axis2D.SecondaryThumbstick, OVRInput.Controller.RTouch);
 
@@ -103,23 +182,21 @@ namespace OmniBot.VR.Control
                 DeltaTime = Time.deltaTime,
             };
             _prevBothGrips = bothGrips;
+            return input;
+        }
 
-            // ── Drive ────────────────────────────────────────────────────────────
-            if (_drive != null)
-                _drive.Tick(ref input, Link);
+        private void TickManipulation()
+        {
+            if (_manip == null || gestureDetector == null) return;
 
-            // ── Manipulation (hand poses) ────────────────────────────────────────
-            if (_manip != null && gestureDetector != null)
-            {
-                HandPose rightHand = BuildHandPose(gestureDetector.rightHand);
-                HandPose leftHand = BuildHandPose(gestureDetector.leftHand);
+            HandPose rightHand = BuildHandPose(gestureDetector.rightHand);
+            HandPose leftHand = BuildHandPose(gestureDetector.leftHand);
 
-                // Thumbs-up gesture drives arm-enable toggle (needs the OVRHand ref
-                // for the skeleton-based check, like the legacy controller).
-                TickThumbsUpToggle(gestureDetector.leftHand);
+            // Thumbs-up gesture drives arm-enable toggle (needs the OVRHand ref
+            // for the skeleton-based check, like the legacy controller).
+            TickThumbsUpToggle(gestureDetector.leftHand);
 
-                _manip.Tick(ref rightHand, ref leftHand, Link);
-            }
+            _manip.Tick(ref rightHand, ref leftHand, Link);
         }
 
         // ── Public API (called by GaragePanelController / OhhoVrApp) ──────────────
@@ -140,6 +217,8 @@ namespace OmniBot.VR.Control
 
             AdvertiseTopics(profile);
             _teleopActive = true;
+            PushPresence("session start");
+            _safety.Start(Link);
 
             // Phase 4: configure the camera feed + recorder from the profile
             if (cameraFeed != null) cameraFeed.Configure(profile);
@@ -152,18 +231,25 @@ namespace OmniBot.VR.Control
         public void StopTeleop()
         {
             if (!_teleopActive && _drive == null && _manip == null) return;
+            _teleopActive = false;
+            _safety.Stop(Link);
             _drive?.Stop(Link);
             _manip?.Stop(Link);
             _drive = null;
             _manip = null;
             Profile = null;
-            _teleopActive = false;
             _wasThumbsUp = false;
             _thumbsUpHoldTimer = 0f;
         }
 
         /// <summary>Whether a robot is currently being teleoperated.</summary>
         public bool IsTeleopActive => _teleopActive;
+
+        /// <summary>First tap arms the confirm. Second tap calls <c>/ohho/estop_reset</c>.</summary>
+        public void RequestEstopReset() => _safety.RequestEstopReset();
+
+        /// <summary>Confirm the HUD e-stop reset and call the robot service.</summary>
+        public bool ConfirmEstopReset() => _safety.ConfirmEstopReset(Link);
 
         // ── Input helpers ─────────────────────────────────────────────────────────
 

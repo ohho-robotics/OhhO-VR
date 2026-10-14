@@ -28,6 +28,13 @@ namespace OmniBot.VR.Control
 
         /// <summary>Unsubscribe all callbacks for a topic.</summary>
         void Unsubscribe(string topic);
+
+        /// <summary>
+        /// rosbridge <c>call_service</c>. <paramref name="onResponse"/> runs on the
+        /// Unity main thread with the call outcome and the <c>values</c> JSON
+        /// (empty on a fake link until the test completes it).
+        /// </summary>
+        void CallService(string service, string type, Action<bool, string> onResponse);
     }
 
     /// <summary>
@@ -55,5 +62,8 @@ namespace OmniBot.VR.Control
 
         public void Unsubscribe(string topic)
             => ROSBridgeClient.Instance.Unsubscribe(topic);
+
+        public void CallService(string service, string type, Action<bool, string> onResponse)
+            => ROSBridgeClient.Instance.CallService(service, type, onResponse);
     }
 }

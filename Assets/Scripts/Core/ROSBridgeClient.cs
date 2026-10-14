@@ -49,11 +49,13 @@ namespace OmniBot.VR.Core
         private readonly object _subscribersLock = new object();
 
         private bool _intentionalDisconnect = false;
-        private int _reconnectAttempts = 0;
-        private const int MaxReconnectAttempts = 3;
+        private readonly ReconnectBackoff _backoff = new ReconnectBackoff();
         private float _reconnectTimer = 0f;
         private bool _reconnecting = false;
         private float _reconnectDelay = 0f;
+        private int _serviceId;
+        private readonly Dictionary<string, Action<bool, string>> _pendingServices
+            = new Dictionary<string, Action<bool, string>>();
 
         // ── Unity lifecycle ──────────────────────────────────────────────────
         private void Awake()
@@ -91,7 +93,7 @@ namespace OmniBot.VR.Core
                     _reconnecting = false;
                     if (!string.IsNullOrEmpty(Url))
                     {
-                        Debug.Log($"[ROSBridgeClient] Reconnect attempt {_reconnectAttempts + 1}/{MaxReconnectAttempts} to {Url}");
+                        Debug.Log($"[ROSBridgeClient] Reconnect attempt {_backoff.Attempts}/{ReconnectBackoff.MaxAttempts} to {Url}");
                         _ = ConnectAsync(Url);
                     }
                 }
@@ -110,7 +112,7 @@ namespace OmniBot.VR.Core
         public async void Connect(string url)
         {
             _intentionalDisconnect = false;
-            _reconnectAttempts = 0;
+            _backoff.Reset();
             Url = url;
             await ConnectAsync(url);
         }
@@ -179,6 +181,18 @@ namespace OmniBot.VR.Core
             SendJson(JsonConvert.SerializeObject(unsubMsg));
         }
 
+        /// <summary>
+        /// rosbridge <c>call_service</c>. The callback is invoked on the main
+        /// thread when the matching <c>service_response</c> arrives.
+        /// </summary>
+        public void CallService(string service, string type, Action<bool, string> onResponse)
+        {
+            string id = "ohho_svc_" + (++_serviceId);
+            if (onResponse != null)
+                _pendingServices[id] = onResponse;
+            SendJson(RosBridgeServiceCall.FormatRequest(id, service, type));
+        }
+
         // ── Private helpers ──────────────────────────────────────────────────
 
         private async System.Threading.Tasks.Task ConnectAsync(string url)
@@ -212,7 +226,7 @@ namespace OmniBot.VR.Core
         private void HandleOpen()
         {
             Debug.Log($"[ROSBridgeClient] Connected to {Url}");
-            _reconnectAttempts = 0;
+            _backoff.Reset();
             _reconnecting = false;
             // Dispatch on main thread via queue trick — enqueue a sentinel
             _incomingQueue.Enqueue(("__connected__", ""));
@@ -242,6 +256,11 @@ namespace OmniBot.VR.Core
                 // Quick op check without full deserialize
                 JObject root = JObject.Parse(json);
                 string op = root["op"]?.ToString();
+                if (op == "service_response")
+                {
+                    _incomingQueue.Enqueue(("__service__", json));
+                    return;
+                }
                 if (op == "publish")
                 {
                     string topic = root["topic"]?.ToString();
@@ -276,6 +295,11 @@ namespace OmniBot.VR.Core
             if (topic == "__error__")
             {
                 OnError?.Invoke(json);
+                return;
+            }
+            if (topic == "__service__")
+            {
+                DispatchService(json);
                 return;
             }
 
@@ -314,21 +338,39 @@ namespace OmniBot.VR.Core
             }
         }
 
+        private void DispatchService(string json)
+        {
+            if (!RosBridgeServiceCall.TryParseResponse(json, out string id, out bool ok, out string values))
+            {
+                Debug.LogWarning("[ROSBridgeClient] Unreadable service_response.");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(id) || !_pendingServices.TryGetValue(id, out var callback))
+                return;
+
+            _pendingServices.Remove(id);
+            try { callback(ok, values); }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ROSBridgeClient] Service callback exception: {ex.Message}");
+            }
+        }
+
         private void ScheduleReconnect()
         {
             if (_intentionalDisconnect) return;
-            if (_reconnectAttempts >= MaxReconnectAttempts)
+            if (!_backoff.TrySchedule(out float delay))
             {
                 Debug.LogWarning("[ROSBridgeClient] Max reconnect attempts reached.");
                 OnError?.Invoke("Max reconnect attempts reached.");
                 return;
             }
-            _reconnectAttempts++;
             // Exponential back-off: 2s, 4s, 8s
-            _reconnectDelay = Mathf.Pow(2f, _reconnectAttempts);
+            _reconnectDelay = delay;
             _reconnectTimer = _reconnectDelay;
             _reconnecting = true;
-            Debug.Log($"[ROSBridgeClient] Scheduling reconnect in {_reconnectDelay}s (attempt {_reconnectAttempts})");
+            Debug.Log($"[ROSBridgeClient] Scheduling reconnect in {_reconnectDelay}s (attempt {_backoff.Attempts})");
         }
 
         private async void SendJson(string json)
