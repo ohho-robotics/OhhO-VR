@@ -1,7 +1,21 @@
 using System.Collections.Generic;
+using OmniBot.VR.Core;
 
 namespace OmniBot.VR.Control
 {
+    /// <summary>
+    /// Teleop session. Only <see cref="SessionKind.Sim"/> (kind=sim) may turn the
+    /// deadman off or use turbo. A real session keeps both at the safe setting.
+    /// </summary>
+    public enum SessionKind
+    {
+        /// <summary>A real robot. Deadman stays on. Turbo stays off.</summary>
+        Real,
+
+        /// <summary>kind=sim. The only session that may disable the deadman.</summary>
+        Sim,
+    }
+
     /// <summary>
     /// Where IK is solved for the arm — determines whether the manipulation
     /// scheme streams joint angles (headset-side) or a Cartesian target pose
@@ -41,20 +55,39 @@ namespace OmniBot.VR.Control
         public bool Holonomic;
         public int BaseDof;
         public string[] BaseActionLabels;
-        public float MaxLinVel;         // m/s
-        public float MaxAngVel;         // rad/s
+        public float MaxLinVel;         // m/s, calibration may only lower this
+        public float MaxAngVel;         // rad/s, calibration may only lower this
 
         /// <summary>
-        /// Safety: a grip must be held to drive. Releasing it publishes zero velocity.
-        /// Defaults to true. The only opt-out is <see cref="DisableDeadmanForSimulation"/>,
-        /// and device player builds ignore that call.
+        /// Hard linear ceiling for this robot class, m/s. Applied after calibration
+        /// and after turbo. OmniBot is <see cref="RobotConfig.MAX_LINEAR_VEL"/> (0.2).
+        /// Zero means unset; <see cref="RobotClassCaps.Ensure"/> fills it.
+        /// </summary>
+        public float HardMaxLinVel;
+
+        /// <summary>
+        /// Hard angular ceiling for this robot class, rad/s. OmniBot is
+        /// <see cref="RobotConfig.MAX_ANGULAR_VEL"/> (1.0).
+        /// </summary>
+        public float HardMaxAngVel;
+
+        /// <summary>
+        /// Session kind. Defaults to <see cref="SessionKind.Real"/>. Only a
+        /// kind=sim session may turn <see cref="RequireDeadman"/> off.
+        /// </summary>
+        public SessionKind Kind = SessionKind.Real;
+
+        /// <summary>
+        /// Safety: the left grip must be held to drive. Releasing it publishes zero
+        /// velocity on that same tick. Defaults to true. The only opt-out is
+        /// <see cref="DisableDeadmanForSimulation"/> on a <see cref="SessionKind.Sim"/> session.
         /// </summary>
         public bool RequireDeadman
         {
             get => _requireDeadman;
             set
             {
-                if (!value && !DeadmanOptOutAllowed)
+                if (!value && Kind != SessionKind.Sim)
                 {
                     _requireDeadman = true;
                     return;
@@ -66,28 +99,13 @@ namespace OmniBot.VR.Control
         private bool _requireDeadman = true;
 
         /// <summary>
-        /// True in the editor (EditMode tests, play mode, Meta XR Simulator).
-        /// Quest player builds compile this to false so a profile cannot disable the deadman.
-        /// </summary>
-        public static bool DeadmanOptOutAllowed
-        {
-            get
-            {
-#if UNITY_EDITOR
-                return true;
-#else
-                return false;
-#endif
-            }
-        }
-
-        /// <summary>
-        /// Turn the deadman off for an editor or simulator session. Explicit on purpose:
-        /// a new profile keeps the deadman required. No effect in a device player build.
+        /// Turn the deadman off. Works only when <see cref="Kind"/> is
+        /// <see cref="SessionKind.Sim"/>. A real session ignores the call.
         /// </summary>
         public void DisableDeadmanForSimulation()
         {
-            RequireDeadman = false;
+            if (Kind != SessionKind.Sim) return;
+            _requireDeadman = false;
         }
 
         // ── Manipulator ───────────────────────────────────────────────────────
@@ -134,6 +152,42 @@ namespace OmniBot.VR.Control
         public IkLocation IkLocation;
 
         public int TotalDof => ArmDof + BaseDof;
+    }
+
+    /// <summary>
+    /// Per-robot-class hard speed ceilings. OmniBot is pinned to
+    /// <see cref="RobotConfig.MAX_LINEAR_VEL"/> / <see cref="RobotConfig.MAX_ANGULAR_VEL"/>.
+    /// Other classes use their <see cref="DriveSpec"/> ceiling so a catalog string
+    /// cannot raise the command above that class.
+    /// </summary>
+    public static class RobotClassCaps
+    {
+        public static bool IsOmniBot(RobotProfile profile)
+        {
+            string id = profile?.RobotId;
+            return id == "omnibot" || id == "omnibot-pro";
+        }
+
+        /// <summary>Fill a missing hard cap. OmniBot's caps are always the class constants.</summary>
+        public static void Ensure(RobotProfile profile)
+        {
+            if (profile == null) return;
+
+            if (IsOmniBot(profile))
+            {
+                profile.HardMaxLinVel = RobotConfig.MAX_LINEAR_VEL;
+                profile.HardMaxAngVel = RobotConfig.MAX_ANGULAR_VEL;
+                return;
+            }
+
+            if (profile.HardMaxLinVel > 0f && profile.HardMaxAngVel > 0f) return;
+
+            var spec = DriveSpecs.Get(profile.Drive);
+            if (profile.HardMaxLinVel <= 0f)
+                profile.HardMaxLinVel = spec.MaxLinVel > 0f ? spec.MaxLinVel : RobotConfig.MAX_LINEAR_VEL;
+            if (profile.HardMaxAngVel <= 0f)
+                profile.HardMaxAngVel = spec.MaxAngVel > 0f ? spec.MaxAngVel : RobotConfig.MAX_ANGULAR_VEL;
+        }
     }
 
     /// <summary>

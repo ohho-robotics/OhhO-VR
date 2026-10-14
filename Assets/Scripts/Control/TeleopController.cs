@@ -67,8 +67,10 @@ namespace OmniBot.VR.Control
         private float _thumbsUpHoldTimer;
         private const float ThumbsUpHoldRequired = 0.5f;
 
-        // ── Previous both-grips state for edge detection ─────────────────────────
+        // ── Button edges, and a HUD e-stop press held until the scheme latches ─
         private bool _prevBothGrips;
+        private bool _prevEmergencyChord;
+        private bool _hudEmergencyStop;
 
         // ── Unity lifecycle ──────────────────────────────────────────────────────
         private void Start()
@@ -90,8 +92,14 @@ namespace OmniBot.VR.Control
             bool rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger, OVRInput.Controller.RTouch) ||
                              OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger, OVRInput.Controller.RTouch) > 0.8f;
             bool bothGrips = leftGrip && rightGrip;
-            // Left X is the explicit e-stop reset. Grip release must not clear it:
-            // one grip is the deadman and the right grip is also turbo.
+            // A and B together latch e-stop. Right trigger is turbo, and only for a sim session.
+            bool buttonA = OVRInput.Get(OVRInput.Button.One, OVRInput.Controller.RTouch);
+            bool buttonB = OVRInput.Get(OVRInput.Button.Two, OVRInput.Controller.RTouch);
+            bool rightTrigger = OVRInput.Get(OVRInput.Button.SecondaryIndexTrigger, OVRInput.Controller.RTouch) ||
+                                OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger, OVRInput.Controller.RTouch) > 0.8f;
+            bool emergencyChord = buttonA && buttonB;
+            // Left X is the explicit Reset. It does not clear e-stop until the deadman
+            // is released and pressed again.
             bool resetEStop = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch);
 
             var input = new TeleopInput
@@ -100,17 +108,26 @@ namespace OmniBot.VR.Control
                 RightStick = rightStick,
                 LeftGrip = leftGrip,
                 RightGrip = rightGrip,
+                RightTrigger = rightTrigger,
+                ButtonA = buttonA,
+                ButtonB = buttonB,
                 BothGrips = bothGrips,
                 BothGripsPressed = bothGrips && !_prevBothGrips,
                 BothGripsReleased = !bothGrips && _prevBothGrips,
+                EmergencyStopPressed = emergencyChord && !_prevEmergencyChord,
+                HudEmergencyStop = _hudEmergencyStop,
                 ResetEmergencyStop = resetEStop,
                 DeltaTime = Time.deltaTime,
             };
             _prevBothGrips = bothGrips;
+            _prevEmergencyChord = emergencyChord;
 
             // ── Drive ────────────────────────────────────────────────────────────
             if (_drive != null)
                 _drive.Tick(ref input, Link);
+
+            if (_hudEmergencyStop && _drive is DriveSchemeBase drive && drive.IsEmergencyStopActive)
+                _hudEmergencyStop = false;
 
             // ── Manipulation (hand poses) ────────────────────────────────────────
             if (_manip != null && gestureDetector != null)
@@ -164,10 +181,23 @@ namespace OmniBot.VR.Control
             _teleopActive = false;
             _wasThumbsUp = false;
             _thumbsUpHoldTimer = 0f;
+            _prevBothGrips = false;
+            _prevEmergencyChord = false;
+            _hudEmergencyStop = false;
         }
 
         /// <summary>Whether a robot is currently being teleoperated.</summary>
         public bool IsTeleopActive => _teleopActive;
+
+        /// <summary>
+        /// HUD e-stop. Latches until an explicit Reset plus a deadman release and
+        /// re-press. Releasing the button does not clear it. The request sticks
+        /// until a connected tick accepts it.
+        /// </summary>
+        public void RequestHudEmergencyStop()
+        {
+            _hudEmergencyStop = true;
+        }
 
         // ── Input helpers ─────────────────────────────────────────────────────────
 

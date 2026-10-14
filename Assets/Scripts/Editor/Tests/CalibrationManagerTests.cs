@@ -1,6 +1,7 @@
 using UnityEngine;
 using NUnit.Framework;
 using OmniBot.VR.Control;
+using OmniBot.VR.Core;
 
 namespace OmniBot.VR.Tests
 {
@@ -75,23 +76,72 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
-        public void ApplyTo_VelocityOverride_WhenPositive_Overrides()
+        public void ApplyTo_VelocityOverride_CannotExceedHardCap()
         {
-            var profile = new RobotProfile { MaxLinVel = 0.2f, MaxAngVel = 1.0f };
+            var profile = new RobotProfile
+            {
+                RobotId = "omnibot-pro",
+                MaxLinVel = 0.2f,
+                MaxAngVel = 1.0f,
+            };
             var cal = new RobotCalibration { maxLinVelOverride = 0.5f, maxAngVelOverride = 2.0f };
             CalibrationManager.ApplyTo(profile, cal);
-            Assert.AreEqual(0.5f, profile.MaxLinVel);
-            Assert.AreEqual(2.0f, profile.MaxAngVel);
+            Assert.AreEqual(0.2f, profile.MaxLinVel, 0.0001f,
+                "A calibration of 0.5 m/s cannot exceed the OmniBot hard cap of 0.2 m/s");
+            Assert.AreEqual(1.0f, profile.MaxAngVel, 0.0001f,
+                "A calibration of 2 rad/s cannot exceed the OmniBot hard cap of 1 rad/s");
+            Assert.LessOrEqual(profile.MaxLinVel, profile.HardMaxLinVel);
+            Assert.LessOrEqual(profile.MaxAngVel, profile.HardMaxAngVel);
+        }
+
+        [Test]
+        public void ApplyTo_VelocityOverride_RaisedProfile_IsClampedToHardCap()
+        {
+            var profile = new RobotProfile
+            {
+                RobotId = "omnibot-pro",
+                MaxLinVel = 1.0f,
+                MaxAngVel = 3.0f,
+            };
+            var cal = new RobotCalibration { maxLinVelOverride = 0.5f, maxAngVelOverride = 2.0f };
+            CalibrationManager.ApplyTo(profile, cal);
+            Assert.AreEqual(0.2f, profile.MaxLinVel, 0.0001f);
+            Assert.AreEqual(1.0f, profile.MaxAngVel, 0.0001f);
+        }
+
+        [Test]
+        public void ApplyTo_VelocityOverride_LowerValue_IsApplied()
+        {
+            var profile = new RobotProfile
+            {
+                RobotId = "omnibot-pro",
+                MaxLinVel = 0.2f,
+                MaxAngVel = 1.0f,
+            };
+            var cal = new RobotCalibration { maxLinVelOverride = 0.1f, maxAngVelOverride = 0.4f };
+            CalibrationManager.ApplyTo(profile, cal);
+            Assert.AreEqual(0.1f, profile.MaxLinVel, 0.0001f);
+            Assert.AreEqual(0.4f, profile.MaxAngVel, 0.0001f);
         }
 
         [Test]
         public void ApplyTo_VelocityOverride_WhenZero_KeepsDefault()
         {
-            var profile = new RobotProfile { MaxLinVel = 0.2f, MaxAngVel = 1.0f };
+            var profile = new RobotProfile
+            {
+                RobotId = "omnibot-pro",
+                MaxLinVel = 0.2f,
+                MaxAngVel = 1.0f,
+            };
             var cal = new RobotCalibration { maxLinVelOverride = 0f, maxAngVelOverride = 0f };
             CalibrationManager.ApplyTo(profile, cal);
             Assert.AreEqual(0.2f, profile.MaxLinVel);
             Assert.AreEqual(1.0f, profile.MaxAngVel);
+
+            var raised = new RobotProfile { RobotId = "omnibot-pro", MaxLinVel = 1.0f, MaxAngVel = 3.0f };
+            CalibrationManager.ApplyTo(raised, new RobotCalibration());
+            Assert.AreEqual(RobotConfig.MAX_LINEAR_VEL, raised.MaxLinVel, 0.0001f);
+            Assert.AreEqual(RobotConfig.MAX_ANGULAR_VEL, raised.MaxAngVel, 0.0001f);
         }
 
         [Test]

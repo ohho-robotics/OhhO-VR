@@ -1,6 +1,7 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using OmniBot.VR.Control;
 using OmniBot.VR.Core;
 
 namespace OmniBot.VR.UI
@@ -47,9 +48,6 @@ namespace OmniBot.VR.UI
         [Header("Emergency Stop")]
         [SerializeField] private Button btnEmergencyStop;
 
-        // ── State ─────────────────────────────────────────────────────────────
-        private bool _emergencyStopHeld = false;
-
         // ── Unity lifecycle ──────────────────────────────────────────────────
         private void Start()
         {
@@ -75,22 +73,16 @@ namespace OmniBot.VR.UI
             // AI command
             if (btnAiSend) btnAiSend.onClick.AddListener(OnAiCommandSend);
 
-            // Emergency stop: button down = stop, button up = release
+            // Emergency stop latches. Releasing the button does not clear it.
             if (btnEmergencyStop != null)
             {
-                // Use EventTrigger for press/release or wire via pointer events
                 var et = btnEmergencyStop.gameObject.AddComponent<UnityEngine.EventSystems.EventTrigger>();
 
                 var pressEntry = new UnityEngine.EventSystems.EventTrigger.Entry
                     { eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown };
                 pressEntry.callback.AddListener(_ => OnEmergencyStopPressed());
 
-                var releaseEntry = new UnityEngine.EventSystems.EventTrigger.Entry
-                    { eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp };
-                releaseEntry.callback.AddListener(_ => OnEmergencyStopReleased());
-
                 et.triggers.Add(pressEntry);
-                et.triggers.Add(releaseEntry);
             }
         }
 
@@ -151,18 +143,20 @@ namespace OmniBot.VR.UI
 
         private void OnEmergencyStopPressed()
         {
-            if (!ROSBridgeClient.Instance.IsConnected) return;
-            _emergencyStopHeld = true;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(true));
-            Debug.LogWarning("[ControlPanel] EMERGENCY STOP pressed.");
-        }
+            var teleop = FindObjectOfType<TeleopController>();
+            if (teleop != null)
+            {
+                teleop.RequestHudEmergencyStop();
+                Debug.LogWarning("[ControlPanel] EMERGENCY STOP latched from the HUD.");
+                return;
+            }
 
-        private void OnEmergencyStopReleased()
-        {
-            if (!ROSBridgeClient.Instance.IsConnected || !_emergencyStopHeld) return;
-            _emergencyStopHeld = false;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(false));
-            Debug.Log("[ControlPanel] Emergency stop released.");
+            if (!ROSBridgeClient.Instance.IsConnected) return;
+            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(true));
+            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, new TwistMsg(
+                new Vector3Msg(0f, 0f, 0f),
+                new Vector3Msg(0f, 0f, 0f)));
+            Debug.LogWarning("[ControlPanel] EMERGENCY STOP latched. Release does not clear it.");
         }
     }
 }

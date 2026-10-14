@@ -15,27 +15,40 @@ namespace OmniBot.VR.Control
         /// <summary>Right thumbstick, range [-1, 1] on each axis after dead-zone.</summary>
         public Vector2 RightStick;
 
-        /// <summary>Left grip held this frame.</summary>
+        /// <summary>Left grip held this frame. This is the deadman.</summary>
         public bool LeftGrip;
 
-        /// <summary>Right grip held this frame.</summary>
+        /// <summary>Right grip held this frame. Not a deadman and not turbo.</summary>
         public bool RightGrip;
 
-        /// <summary>Both grips held. This latches emergency stop; it is not a drive or turbo chord.</summary>
+        /// <summary>Right index trigger. Turbo in a kind=sim session; ignored on a real robot.</summary>
+        public bool RightTrigger;
+
+        /// <summary>Right-controller A button.</summary>
+        public bool ButtonA;
+
+        /// <summary>Right-controller B button.</summary>
+        public bool ButtonB;
+
+        /// <summary>Both grips held. Not an e-stop chord.</summary>
         public bool BothGrips;
 
-        /// <summary>Rising edge of both-grips this frame (latches e-stop).</summary>
+        /// <summary>Rising edge of both grips. Does not latch e-stop.</summary>
         public bool BothGripsPressed;
 
-        /// <summary>
-        /// Falling edge of both-grips this frame. Does not clear e-stop: the grips are
-        /// also the deadman and turbo, so release-to-clear would resume driving.
-        /// </summary>
+        /// <summary>Falling edge of both grips. Does not clear e-stop.</summary>
         public bool BothGripsReleased;
 
+        /// <summary>Rising edge of A+B this frame. Latches emergency stop.</summary>
+        public bool EmergencyStopPressed;
+
+        /// <summary>HUD e-stop button pressed this frame. Latches emergency stop.</summary>
+        public bool HudEmergencyStop;
+
         /// <summary>
-        /// Explicit e-stop reset this frame (left controller X). Ignored while both
-        /// grips are still held. This is the only input that clears a latched e-stop.
+        /// Explicit e-stop Reset this frame (left controller X). Does not clear the
+        /// latch by itself: the deadman must then be released and pressed again.
+        /// Ignored while A and B are still held.
         /// </summary>
         public bool ResetEmergencyStop;
 

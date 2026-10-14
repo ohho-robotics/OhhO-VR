@@ -61,6 +61,7 @@ namespace OmniBot.VR.Control
 
             var profile = Derive(hw, robot.RobotType, category);
             ApplyFlagshipOverride(profile, modelId, category);
+            RobotClassCaps.Ensure(profile);
             return profile;
         }
 

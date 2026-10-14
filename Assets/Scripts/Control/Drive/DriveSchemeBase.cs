@@ -6,11 +6,12 @@ namespace OmniBot.VR.Control.Drive
     /// <summary>
     /// Shared infrastructure for every <see cref="IDriveScheme"/> — the common
     /// plumbing that doesn't change between a mecanum base, a drone, or an
-    /// underwater ROV: latched emergency stop (both grips, cleared only by an
-    /// explicit reset), turbo (right grip held alone, hard-capped at 0.2 m/s),
-    /// deadman grip (on by default), thumbstick dead-zone, 20 Hz publish-rate
-    /// timing, zero-stop after 0.1 s idle, and the <c>/control_mode</c>
-    /// teleop↔idle management.
+    /// underwater ROV: latched emergency stop (A+B or the HUD button; cleared
+    /// only by an explicit Reset followed by a deadman release and re-press),
+    /// turbo (right trigger, sim sessions only, then clamped to the robot-class
+    /// hard cap), deadman (left grip, on unless this is a kind=sim session that
+    /// opted out), thumbstick dead-zone, 20 Hz publish-rate timing, zero-stop
+    /// after 0.1 s idle, and the <c>/control_mode</c> teleop↔idle management.
     ///
     /// Subclasses implement <see cref="ComputeVelocity"/> — the scheme-specific
     /// mapping of dead-zoned thumbsticks + turbo flag → a
@@ -22,11 +23,12 @@ namespace OmniBot.VR.Control.Drive
         protected const float TurboMultiplier = 2.0f;
 
         /// <summary>
-        /// Hard linear-speed cap while turbo is held, in m/s. Turbo speed is
-        /// min(profile MaxLinVel, this constant). Profiles and calibration can
-        /// lower it by lowering MaxLinVel; they cannot raise it.
+        /// OmniBot hard linear cap, in m/s. Same constant as
+        /// <see cref="RobotConfig.MAX_LINEAR_VEL"/>. Per-robot ceilings live on
+        /// <see cref="RobotProfile.HardMaxLinVel"/>; this remains the OmniBot value
+        /// callers and tests compare against.
         /// </summary>
-        public const float HardTurboLinCapMps = 0.2f;
+        public const float HardTurboLinCapMps = RobotConfig.MAX_LINEAR_VEL;
 
         protected const float ZeroStopDelay = 0.1f;       // s before we stop publishing zeros
         protected const float IdleModeRevertDelay = 0.5f; // s idle → revert control mode
@@ -38,22 +40,26 @@ namespace OmniBot.VR.Control.Drive
 
         // ── E-stop / mode state ──────────────────────────────────────────────────
         protected bool EmergencyStopActive;
-        protected bool PrevBothGrips;
         protected bool IsPublishing;
         protected float NoInputTimer;
         protected float NoInputModeTimer;
         protected bool InTeleopMode;
 
+        // Operator clear is two more steps after the latch: an explicit Reset,
+        // then the left-grip deadman must be released and pressed again.
+        private bool _resetAccepted;
+        private bool _deadmanReleasedAfterReset;
+
         public bool IsConfigured => Profile != null;
         public abstract string HudHint { get; }
 
-        /// <summary>True when emergency stop has been activated via both grips or programmatically.</summary>
+        /// <summary>True while emergency stop is latched.</summary>
         public bool IsEmergencyStopActive => EmergencyStopActive;
 
         /// <summary>
-        /// When true, a grip must be held to drive (deadman switch). Releasing the grip
-        /// immediately halts motion and publishes zero velocity. Defaults to true.
-        /// Assigning false is ignored outside the editor/simulator; call
+        /// When true, the left grip must be held to drive. Releasing it publishes
+        /// zero velocity on that same tick. Defaults to true. Assigning false is
+        /// ignored unless the configured profile is a kind=sim session; call
         /// <see cref="DisableDeadmanForSimulation"/> to opt out explicitly.
         /// </summary>
         public bool RequireDeadman
@@ -61,7 +67,7 @@ namespace OmniBot.VR.Control.Drive
             get => _requireDeadman;
             set
             {
-                if (!value && !RobotProfile.DeadmanOptOutAllowed)
+                if (!value && (Profile == null || Profile.Kind != SessionKind.Sim))
                 {
                     _requireDeadman = true;
                     return;
@@ -72,22 +78,32 @@ namespace OmniBot.VR.Control.Drive
 
         private bool _requireDeadman = true;
 
-        /// <summary>Linear speed scale (m/s) for the tick in progress. Turbo uses the hard cap.</summary>
+        /// <summary>Linear speed scale (m/s) for the tick in progress, already under the hard cap.</summary>
         protected float ActiveLinVelLimit;
 
-        /// <summary>
-        /// HUD fragment shared by every scheme: deadman (when required), the 0.2 m/s
-        /// turbo cap, and the latched both-grips e-stop.
-        /// </summary>
-        protected string SafetyHudSuffix =>
-            (RequireDeadman ? " · Hold one grip to drive" : "")
-            + " · Right grip: turbo (clamped to 0.2 m/s) · Both grips: e-stop (latched until left X reset)";
+        /// <summary>Angular speed scale (rad/s) for the tick in progress, already under the hard cap.</summary>
+        protected float ActiveAngVelLimit;
 
         /// <summary>
-        /// Control-mode string published after the idle timeout. Ground robots
-        /// revert to "nav2"; aerial/underwater robots can override (e.g. "offboard"
-        /// or an empty string to leave the mode untouched).
+        /// HUD fragment shared by every scheme. Always states whether the deadman
+        /// is on, whether turbo is available, and that e-stop is latched.
         /// </summary>
+        protected string SafetyHudSuffix
+        {
+            get
+            {
+                string deadman = RequireDeadman
+                    ? " · Deadman ON (left grip required)"
+                    : " · Deadman OFF (sim session)";
+                string turbo = Profile != null && Profile.Kind == SessionKind.Sim
+                    ? $" · Right trigger: turbo (clamped to {LinearCapLabel()} m/s)"
+                    : " · Turbo disabled (real robot)";
+                return deadman + turbo
+                    + " · A+B or HUD: e-stop (latched until Reset, then release and re-press the deadman)";
+            }
+        }
+
+        /// <summary>Control-mode string published after the idle timeout.</summary>
         protected virtual string IdleMode => "nav2";
 
         /// <summary>Control-mode string published while the user is driving.</summary>
@@ -99,39 +115,44 @@ namespace OmniBot.VR.Control.Drive
             PublishInterval = 1f / PublishHz;
             PublishTimer = 0f;
             EmergencyStopActive = false;
-            PrevBothGrips = false;
+            _resetAccepted = false;
+            _deadmanReleasedAfterReset = false;
             IsPublishing = false;
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
             InTeleopMode = false;
-            // Null profile keeps the safe default (deadman on). An explicit false
-            // only sticks in the editor/simulator.
+            if (profile != null) RobotClassCaps.Ensure(profile);
+            // Null profile keeps the safe default (deadman on). False sticks only
+            // when this profile is a kind=sim session.
             RequireDeadman = profile == null || profile.RequireDeadman;
             ActiveLinVelLimit = profile != null ? Mathf.Max(0f, profile.MaxLinVel) : 0f;
+            ActiveAngVelLimit = profile != null ? Mathf.Max(0f, profile.MaxAngVel) : 0f;
         }
 
         /// <summary>
-        /// Simulation-only deadman opt-out. Device builds keep the deadman required.
+        /// Simulation-only deadman opt-out. No effect unless the profile's session
+        /// kind is <see cref="SessionKind.Sim"/>.
         /// </summary>
         public void DisableDeadmanForSimulation()
         {
-            RequireDeadman = false;
+            if (Profile == null || Profile.Kind != SessionKind.Sim) return;
+            Profile.DisableDeadmanForSimulation();
+            _requireDeadman = false;
         }
 
-        /// <summary>
-        /// Returns true if the deadman switch is engaged (either grip held alone, not both).
-        /// Both grips simultaneously is reserved for Emergency Stop.
-        /// </summary>
+        /// <summary>True when the left grip (the deadman) is held.</summary>
         public virtual bool IsDeadmanEngaged(in TeleopInput input)
         {
-            return (input.LeftGrip || input.RightGrip) && !input.BothGrips;
+            return input.LeftGrip;
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
         {
             if (!IsConfigured || Profile == null || !link.IsConnected) return;
 
-            // ── Emergency stop: both grips latch until an explicit reset ────────
+            RobotClassCaps.Ensure(Profile);
+
+            // ── Emergency stop: A+B or HUD, latched until Reset + deadman cycle ─
             HandleEmergencyStop(ref input, link);
             if (EmergencyStopActive)
             {
@@ -144,11 +165,10 @@ namespace OmniBot.VR.Control.Drive
                 return;
             }
 
-            // ── Deadman grip check ─────────────────────────────────────────────
+            // ── Deadman: left grip. Release publishes zero on this same tick. ──
             bool deadmanEngaged = !RequireDeadman || IsDeadmanEngaged(input);
             if (!deadmanEngaged)
             {
-                // Deadman released: immediately halt base motion and revert control mode
                 if (IsPublishing)
                 {
                     link.Publish(Profile.Topics.CmdVel, ZeroTwist());
@@ -164,18 +184,25 @@ namespace OmniBot.VR.Control.Drive
             float rx = ApplyDeadZone(input.RightStick.x);
             float ry = ApplyDeadZone(input.RightStick.y);
 
-            // Turbo: right grip held alone. Both grips are e-stop, not a faster drive.
-            // Turbo speed = min(profile MaxLinVel, HardTurboLinCapMps). The 0.2 m/s
-            // constant is not a profile field.
-            bool turbo = input.RightGrip && !input.LeftGrip;
+            // Turbo is the right trigger, and only in a kind=sim session. Real
+            // robots ignore it. The multiplier is applied by the scheme; the hard
+            // cap below is applied after that so turbo cannot exceed the class ceiling.
+            bool turbo = Profile.Kind == SessionKind.Sim && input.RightTrigger;
             float speedMult = turbo ? TurboMultiplier : 1.0f;
-            float profileLin = Mathf.Max(0f, Profile.MaxLinVel);
-            ActiveLinVelLimit = turbo ? Mathf.Min(profileLin, HardTurboLinCapMps) : profileLin;
+
+            float hardLin = Profile.HardMaxLinVel > 0f ? Profile.HardMaxLinVel : HardTurboLinCapMps;
+            float hardAng = Profile.HardMaxAngVel > 0f ? Profile.HardMaxAngVel : RobotConfig.MAX_ANGULAR_VEL;
+            float calibratedLin = Mathf.Min(Mathf.Max(0f, Profile.MaxLinVel), hardLin);
+            float calibratedAng = Mathf.Min(Mathf.Max(0f, Profile.MaxAngVel), hardAng);
+            ActiveLinVelLimit = calibratedLin;
+            ActiveAngVelLimit = calibratedAng;
 
             // ── Scheme-specific velocity ───────────────────────────────────────
             bool hasInput;
             TwistMsg twist = ComputeVelocity(lx, ly, rx, ry, speedMult, out hasInput);
-            ClampLinearSpeed(twist, ActiveLinVelLimit);
+            // Hard caps run after calibration (already in the limits) and after turbo.
+            ClampLinearSpeed(twist, hardLin);
+            ClampAngularSpeed(twist, hardAng);
 
             // ── Control-mode management ────────────────────────────────────────
             UpdateControlMode(hasInput, input.DeltaTime, link);
@@ -216,12 +243,10 @@ namespace OmniBot.VR.Control.Drive
 
         /// <summary>
         /// Map dead-zoned thumbstick values + speed multiplier → a Twist message.
-        /// <paramref name="lx"/>/<paramref name="ly"/> = left stick X/Y,
-        /// <paramref name="rx"/>/<paramref name="ry"/> = right stick X/Y (all in
-        /// [-1, 1]). <paramref name="speedMult"/> is 1.0 or 2.0 (turbo). Scale linear
-        /// axes by <see cref="ActiveLinVelLimit"/> (turbo is already capped at
-        /// <see cref="HardTurboLinCapMps"/>). Set <paramref name="hasInput"/> to
-        /// false if no axis is active.
+        /// Scale linear axes by <see cref="ActiveLinVelLimit"/> and angular axes by
+        /// <see cref="ActiveAngVelLimit"/>. Both are already at or under the class
+        /// hard cap; <see cref="Tick"/> clamps again after this returns.
+        /// <paramref name="speedMult"/> is 1.0, or 2.0 when sim turbo is held.
         /// </summary>
         protected abstract TwistMsg ComputeVelocity(
             float lx, float ly, float rx, float ry, float speedMult, out bool hasInput);
@@ -231,6 +256,8 @@ namespace OmniBot.VR.Control.Drive
         public void TriggerEmergencyStop(IRobotLink link)
         {
             EmergencyStopActive = true;
+            _resetAccepted = false;
+            _deadmanReleasedAfterReset = false;
             if (link != null && link.IsConnected && Profile?.Topics != null)
             {
                 if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
@@ -242,9 +269,16 @@ namespace OmniBot.VR.Control.Drive
             VibrateControllers(1f);
         }
 
+        /// <summary>
+        /// System clear (session teardown, tests). The operator path does not call
+        /// this: releasing the buttons does nothing, and a Reset only arms the
+        /// deadman release/re-press cycle inside <see cref="HandleEmergencyStop"/>.
+        /// </summary>
         public void ClearEmergencyStop(IRobotLink link)
         {
             EmergencyStopActive = false;
+            _resetAccepted = false;
+            _deadmanReleasedAfterReset = false;
             if (link != null && link.IsConnected && Profile?.Topics != null)
             {
                 if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
@@ -255,20 +289,43 @@ namespace OmniBot.VR.Control.Drive
 
         private void HandleEmergencyStop(ref TeleopInput input, IRobotLink link)
         {
-            if (input.BothGripsPressed)
+            if (input.EmergencyStopPressed || input.HudEmergencyStop)
             {
-                TriggerEmergencyStop(link);
-                Debug.Log($"[{GetType().Name}] Emergency stop LATCHED. Left X resets it; releasing the grips does not.");
+                _resetAccepted = false;
+                _deadmanReleasedAfterReset = false;
+                if (!EmergencyStopActive)
+                    TriggerEmergencyStop(link);
+                else
+                    Debug.Log($"[{GetType().Name}] Emergency stop still latched.");
+                return;
             }
-            else if (input.ResetEmergencyStop && EmergencyStopActive && !input.BothGrips)
+
+            if (!EmergencyStopActive) return;
+
+            // Holding the e-stop chord blocks the clear.
+            if (input.ButtonA && input.ButtonB) return;
+
+            if (input.ResetEmergencyStop)
+                _resetAccepted = true;
+
+            // The release has to be observed after Reset. A grip that was already
+            // up on the Reset tick counts; the re-press is a later tick.
+            if (_resetAccepted && !input.LeftGrip)
+                _deadmanReleasedAfterReset = true;
+
+            if (_resetAccepted && _deadmanReleasedAfterReset && input.LeftGrip)
             {
-                // Explicit reset only. Grip release is not a reset: one grip is the
-                // deadman and the right grip is also turbo, so clearing on release
-                // would resume motion while the operator is still holding a grip.
                 ClearEmergencyStop(link);
-                Debug.Log($"[{GetType().Name}] Emergency stop reset.");
+                Debug.Log($"[{GetType().Name}] Emergency stop reset after deadman re-press.");
             }
-            PrevBothGrips = input.BothGrips;
+        }
+
+        private string LinearCapLabel()
+        {
+            float cap = Profile != null && Profile.HardMaxLinVel > 0f
+                ? Profile.HardMaxLinVel
+                : HardTurboLinCapMps;
+            return cap.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         private static void VibrateControllers(float amplitude)
@@ -333,6 +390,16 @@ namespace OmniBot.VR.Control.Drive
             twist.linear.x = Mathf.Clamp(twist.linear.x, -cap, cap);
             twist.linear.y = Mathf.Clamp(twist.linear.y, -cap, cap);
             twist.linear.z = Mathf.Clamp(twist.linear.z, -cap, cap);
+        }
+
+        /// <summary>Clamp the angular vector so its components cannot exceed <paramref name="limit"/> rad/s.</summary>
+        protected static void ClampAngularSpeed(TwistMsg twist, float limit)
+        {
+            if (twist?.angular == null) return;
+            float cap = Mathf.Abs(limit);
+            twist.angular.x = Mathf.Clamp(twist.angular.x, -cap, cap);
+            twist.angular.y = Mathf.Clamp(twist.angular.y, -cap, cap);
+            twist.angular.z = Mathf.Clamp(twist.angular.z, -cap, cap);
         }
     }
 }

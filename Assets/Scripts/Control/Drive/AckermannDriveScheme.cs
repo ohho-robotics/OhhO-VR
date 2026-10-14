@@ -29,7 +29,7 @@ namespace OmniBot.VR.Control.Drive
             // Steering maps to angular velocity, scaled by MaxAngVel.
             // When stationary, still allow a turn-in-place approximation so the
             // user can reposition; a real Ackermann robot will ignore ω when v≈0.
-            float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
+            float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * ActiveAngVelLimit;
 
             return new TwistMsg(
                 new Vector3Msg(v, 0f, 0f),
