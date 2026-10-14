@@ -5,6 +5,7 @@ using UnityEngine;
 using NativeWebSocket;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using OmniBot.VR.Telemetry;
 
 namespace OmniBot.VR.Core
 {
@@ -145,8 +146,25 @@ namespace OmniBot.VR.Core
                 Debug.LogWarning($"[ROSBridgeClient] Publish dropped — not connected. Topic: {topic}");
                 return;
             }
+            NoteOutgoing(msg);
             var wrapper = new ROSPublishMessage<T>(topic, msg);
             SendJson(JsonConvert.SerializeObject(wrapper));
+        }
+
+        /// <summary>
+        /// Display-only echo of twist and joint targets that are about to go out.
+        /// Does not change the message, the 20 Hz publish, or any safety default.
+        /// </summary>
+        static void NoteOutgoing<T>(T msg)
+        {
+            double now = Time.realtimeSinceStartupAsDouble;
+            if (msg is TwistMsg twist && twist.linear != null && twist.angular != null)
+            {
+                CommandEcho.Shared.NoteTwist(twist.linear.x, twist.linear.y, twist.angular.z, now);
+                return;
+            }
+            if (msg is JointStateMsg joints && joints.position != null)
+                CommandEcho.Shared.NoteJoints(joints.position, joints.position.Length, now);
         }
 
         /// <summary>
