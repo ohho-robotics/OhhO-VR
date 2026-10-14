@@ -29,6 +29,11 @@ jobs:
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Unity tests were skipped because the secrets are not set. See README section 4 (Edit-mode tests)."
+            {
+              echo "### Edit-mode tests"
+              echo ""
+              echo "Skipped: UNITY_LICENSE, UNITY_EMAIL, or UNITY_PASSWORD is not set."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # The Android editor image is large; free runner disk space before pulling it.
@@ -69,8 +74,152 @@ jobs:
           testMode: editmode
           artifactsPath: test-results
 
+      # GameCI writes test-results/editmode-results.xml. A green runner with
+      # zero cases is a failure: the latest confirmed artifact (PR 6, run
+      # 38548684961) was editmode-results.xml with 53 passed / 53 total.
+      - name: Fail if zero tests executed
+        if: always() && steps.secrets.outputs.available == 'true'
+        shell: bash
+        env:
+          ARTIFACTS_PATH: ${{ steps.tests.outputs.artifactsPath }}
+        run: python3 scripts/check-editmode-results.py "${ARTIFACTS_PATH:-test-results}"
+
       - uses: actions/upload-artifact@v4
         if: always() && steps.secrets.outputs.available == 'true'
         with:
           name: editmode-test-results
           path: ${{ steps.tests.outputs.artifactsPath }}
+
+  build-android:
+    needs: editmode
+    runs-on: ubuntu-latest
+    env:
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+    steps:
+      - name: Check whether Unity licence secrets are set
+        id: secrets
+        shell: bash
+        run: |
+          if [ -n "$UNITY_LICENSE" ] && [ -n "$UNITY_EMAIL" ] && [ -n "$UNITY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Quest APK build was skipped because the secrets are not set. See README section 4 (Edit-mode tests)."
+            {
+              echo "### Quest APK"
+              echo ""
+              echo "Skipped: UNITY_LICENSE, UNITY_EMAIL, or UNITY_PASSWORD is not set."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The Android editor image is large; free runner disk space before pulling it.
+      - name: Free disk space
+        if: steps.secrets.outputs.available == 'true'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.available == 'true'
+
+      - uses: actions/cache@v4
+        if: steps.secrets.outputs.available == 'true'
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-Android-
+
+      # Debug keystore only. Release signing is OHH-232. The file is gitignored.
+      - name: Generate CI debug keystore
+        if: steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v keytool >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y openjdk-17-jre-headless
+          fi
+          mkdir -p ci
+          keytool -genkeypair -v \
+            -keystore ci/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          test -s ci/debug.keystore
+
+      - uses: game-ci/unity-builder@v4
+        id: builder
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.5.2f1
+          customImage: unityci/editor:ubuntu-6000.5.2f1-android-3
+          targetPlatform: Android
+          buildMethod: OmniBot.VR.Editor.BuildAutomator.BuildQuestApk
+          buildsPath: build/Android
+          androidExportType: androidPackage
+          androidKeystoreName: /github/workspace/ci/debug.keystore
+          androidKeystorePass: android
+          androidKeyaliasName: androiddebugkey
+          androidKeyaliasPass: android
+
+      - name: Print APK size
+        if: steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f build/Android/OhhO-VR.apk ]; then
+            src=build/Android/OhhO-VR.apk
+          else
+            src=$(find build -type f -name '*.apk' -print -quit 2>/dev/null || true)
+          fi
+          if [ -z "${src:-}" ] || [ ! -f "$src" ]; then
+            echo "::error::Android build did not produce an APK"
+            exit 1
+          fi
+          dest="OhhO-VR-${GITHUB_SHA}.apk"
+          cp -f "$src" "$dest"
+          python3 - "$dest" << 'PY'
+          import os
+          import sys
+          from pathlib import Path
+          dest = Path(sys.argv[1])
+          size = dest.stat().st_size
+          mib = size / (1024 * 1024)
+          # IL2CPP Quest players are tens of megabytes. A tiny file is not an installable APK.
+          if size < 5_000_000:
+              print(f"::error::APK {dest.name} is only {size} bytes; expected an Android IL2CPP build")
+              raise SystemExit(1)
+          print(f"APK {dest.name} size {size} bytes ({mib:.1f} MiB)")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as handle:
+                  handle.write("### Quest APK\n\n")
+                  handle.write(f"- file: `{dest.name}`\n")
+                  handle.write(f"- size: {size} bytes ({mib:.1f} MiB)\n")
+                  handle.write("- target: Android ARM64, IL2CPP\n")
+                  handle.write("- signing: CI debug keystore (alias `androiddebugkey`). Release signing is OHH-232.\n")
+                  handle.write("- human TODO: sideload this APK onto a Quest once.\n")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: steps.secrets.outputs.available == 'true'
+        with:
+          name: OhhO-VR-${{ github.sha }}.apk
+          path: OhhO-VR-${{ github.sha }}.apk
+          if-no-files-found: error
