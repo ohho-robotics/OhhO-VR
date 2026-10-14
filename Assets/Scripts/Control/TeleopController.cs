@@ -18,8 +18,8 @@ namespace OmniBot.VR.Control
     /// poses → manipulation, publishing to the robot over the
     /// <see cref="IRobotLink"/>.
     ///
-    /// Replaces the legacy <c>Input/BaseController.cs</c> +
-    /// <c>Input/HandTrackingArmController.cs</c> as the single teleop GameObject.
+    /// Replaces the archived BaseController and HandTrackingArmController
+    /// (Archive/legacy-control) as the single teleop GameObject.
     /// Those MonoBehaviours were hardcoded to OmniBot; this one is agnostic — the
     /// profile decides what gets driven and how.
     /// </summary>

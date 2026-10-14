@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using UnityEngine;
 using OmniBot.VR.Core;
 
@@ -20,6 +25,7 @@ namespace OmniBot.VR.Input
     ///   - Sends /control_mode = "teleop" when driving,
     ///             /control_mode = "nav2"   after 0.5 s of no input.
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class BaseController : MonoBehaviour
     {
         // ── Constants ────────────────────────────────────────────────────────
@@ -174,3 +180,4 @@ namespace OmniBot.VR.Input
         }
     }
 }
+#endif

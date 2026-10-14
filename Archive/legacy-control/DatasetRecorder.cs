@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,6 +24,7 @@ namespace OmniBot.VR.Recording
     /// Application.persistentDataPath/recordings/{episodeName}.jsonl
     /// when the episode stops.
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class DatasetRecorder : MonoBehaviour
     {
         // ── Constants ─────────────────────────────────────────────────────────
@@ -283,3 +289,4 @@ namespace OmniBot.VR.Recording
         }
     }
 }
+#endif
