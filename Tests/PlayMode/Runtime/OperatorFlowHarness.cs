@@ -373,21 +373,21 @@ namespace OmniBot.VR.PlayMode
         static void SetField(object target, string name, object value)
         {
             var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-            if (field == null) throw new MissingFieldException(target.GetType().FullName, name);
+            if (field == null) throw new System.MissingFieldException(target.GetType().FullName, name);
             field.SetValue(target, value);
         }
 
         static object GetField(object target, string name)
         {
             var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
-            if (field == null) throw new MissingFieldException(target.GetType().FullName, name);
+            if (field == null) throw new System.MissingFieldException(target.GetType().FullName, name);
             return field.GetValue(target);
         }
 
         static void Invoke(object target, string name, params object[] args)
         {
             var method = target.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic);
-            if (method == null) throw new MissingMethodException(target.GetType().FullName, name);
+            if (method == null) throw new System.MissingMethodException(target.GetType().FullName, name);
             method.Invoke(target, args);
         }
 
