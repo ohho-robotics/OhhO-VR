@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using OmniBot.VR.Core.Platform;
+using OmniBot.VR.Nav;
 
 namespace OmniBot.VR.Control
 {
@@ -61,6 +62,7 @@ namespace OmniBot.VR.Control
 
             var profile = Derive(hw, robot.RobotType, category);
             ApplyFlagshipOverride(profile, modelId, category);
+            profile.DeploymentKind = RobotDeployment.FromUserRobot(robot.UserRobot);
             return profile;
         }
 

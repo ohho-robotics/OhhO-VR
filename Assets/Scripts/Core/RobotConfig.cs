@@ -13,6 +13,7 @@ namespace OmniBot.VR.Core
         public const string TOPIC_ARM_ENABLE      = "/arm/enable";
         public const string TOPIC_EMERGENCY_STOP  = "/emergency_stop";
         public const string TOPIC_MISSION_COMMAND = "/mission/command";
+        public const string TOPIC_MISSION_CANCEL  = "/mission/cancel";
         public const string TOPIC_AI_COMMAND      = "/ai/command";
         public const string TOPIC_VR_RECORD_START = "/vr/record_start";
         public const string TOPIC_VR_RECORD_STOP  = "/vr/record_stop";
@@ -26,6 +27,15 @@ namespace OmniBot.VR.Core
         public const string TOPIC_AI_RESPONSE_NEEDED  = "/ai/response_needed";
         public const string TOPIC_CONTROL_MODE_ACTIVE = "/control_mode/active";
         public const string TOPIC_ARM_MODE_ACTIVE     = "/arm/cmd_mode/active";
+        public const string TOPIC_GLOBAL_PLAN        = "/plan";
+        public const string TOPIC_MAP                = "/map";
+        public const string TOPIC_WAYPOINTS          = "/ohho/waypoints";
+
+        // ── Nav2 action / services (rosbridge) ───────────────────────────────
+        public const string ACTION_NAVIGATE_TO_POSE = "navigate_to_pose";
+        public const string ACTION_NAVIGATE_TO_POSE_TYPE = "nav2_msgs/action/NavigateToPose";
+        public const string SERVICE_LIST_WAYPOINTS = "/ohho/nav/list_waypoints";
+        public const string SERVICE_GET_PARAM = "/rosapi/get_param";
 
         // ── Physical limits ──────────────────────────────────────────────────
         /// <summary>Maximum base linear velocity in m/s.</summary>

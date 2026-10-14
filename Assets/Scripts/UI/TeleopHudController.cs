@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using OmniBot.VR.Core;
+using OmniBot.VR.Nav;
 using OmniBot.VR.Recording;
 
 namespace OmniBot.VR.UI
@@ -108,6 +109,7 @@ namespace OmniBot.VR.UI
             RefreshRobotLabel();
             OnConnectionState(conn != null && conn.IsConnected);
             RefreshRecordingUi();
+            NavGoalController.Ensure(this);
         }
 
         private void OnDisable()
