@@ -4,8 +4,13 @@ using System.Reflection;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using OmniBot.VR.Control;
+using OmniBot.VR.Control.Drive;
+using OmniBot.VR.Control.Manip;
 using OmniBot.VR.Core;
 using OmniBot.VR.Descriptor;
+using OmniBot.VR.Recording;
+using OmniBot.VR.UI;
+using OmniBot.VR.Video;
 using UnityEngine;
 
 namespace OmniBot.VR.Tests
@@ -217,6 +222,144 @@ namespace OmniBot.VR.Tests
             Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.CmdVel));
             Assert.AreEqual(0f, profile.MaxLinVel);
             Assert.AreEqual(0f, profile.MaxAngVel);
+            // Non-zero drive caps mean this is not arm-only. Do not retarget
+            // the base command topic onto the arm.
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.ArmCommands));
+        }
+
+        [Test]
+        public void FromDescriptor_So101ArmOnly_ProfileHudSchemeAndRecorderComeFromTheDocument()
+        {
+            var descriptor = Load("so101_arm_only.descriptor.json");
+            var profile = RobotProfileFactory.FromDescriptor(descriptor);
+
+            Assert.IsNotNull(profile);
+            Assert.IsTrue(profile.CapsFromDescriptor);
+            Assert.AreEqual("so101-arm", profile.RobotId);
+            Assert.AreEqual("SO-101", profile.Name);
+            Assert.AreEqual(DriveKind.FixedBase, profile.Drive);
+            Assert.IsFalse(profile.Holonomic);
+            Assert.AreEqual(0, profile.BaseDof);
+            Assert.IsTrue(profile.IsStationary);
+            Assert.IsFalse(profile.CanNavigate);
+            Assert.AreEqual(0f, profile.MaxLinVel, 0.0001f);
+            Assert.AreEqual(0f, profile.MaxLatVel, 0.0001f);
+            Assert.AreEqual(0f, profile.MaxAngVel, 0.0001f);
+            Assert.AreEqual(0.15f, profile.HardMaxJointStep, 0.0001f);
+            Assert.LessOrEqual(profile.HardMaxLinVel, RobotConfig.MAX_LINEAR_VEL);
+
+            Assert.IsTrue(profile.HasArm);
+            Assert.AreEqual(6, profile.ArmDof);
+            Assert.AreEqual("arm_shoulder_pan", profile.Joints[0].Name);
+            Assert.AreEqual("arm_gripper", profile.Joints[5].Name);
+            Assert.AreEqual(-0.1f, profile.Joints[5].Min, 0.001f);
+            Assert.AreEqual(0.8f, profile.Joints[5].Max, 0.001f);
+            Assert.AreEqual(0.117f, profile.ArmLinkLengths[0], 0.0001f);
+            Assert.AreEqual(0.133f, profile.ArmLinkLengths[1], 0.0001f);
+            Assert.AreEqual(0.080f, profile.ArmLinkLengths[2], 0.0001f);
+
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.CmdVel));
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.Odom));
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.ControlMode));
+            Assert.AreEqual("/arm/joint_commands", profile.Topics.ArmCommands);
+            Assert.AreEqual("/arm/joint_states", profile.Topics.JointStates);
+            Assert.AreEqual("/emergency_stop", profile.Topics.EmergencyStop);
+            Assert.AreEqual(descriptor.Topics.Cmd, profile.Topics.ArmCommands);
+            Assert.AreEqual(descriptor.Topics.State, profile.Topics.JointStates);
+            CollectionAssert.AreEqual(descriptor.Topics.Images, profile.Topics.Images);
+            CollectionAssert.AreEqual(
+                new[] { "/camera/wrist/image_raw" },
+                CameraFeedController.TopicsFor(profile));
+
+            CollectionAssert.AreEqual(
+                new[] { TeleopHudPlan.Arm, TeleopHudPlan.Gripper },
+                TeleopHudPlan.Rows(profile));
+            Assert.IsFalse(TeleopHudPlan.Has(TeleopHudPlan.Rows(profile), TeleopHudPlan.Pose));
+            Assert.IsFalse(TeleopHudPlan.Has(TeleopHudPlan.Rows(profile), TeleopHudPlan.Velocity));
+            Assert.IsFalse(TeleopHudPlan.Has(TeleopHudPlan.Rows(profile), TeleopHudPlan.Mode));
+
+            Assert.IsNull(ControlSchemeFactory.CreateDriveScheme(profile));
+            var manip = ControlSchemeFactory.CreateManipulationScheme(profile, null);
+            Assert.IsInstanceOf<HandIK6DofScheme>(manip);
+            Assert.IsTrue(manip.HudHint.Contains("gripper"));
+
+            var recorded = RecorderTopicSet.FromProfile(profile);
+            Assert.AreEqual("/arm/joint_states", recorded.JointStates);
+            Assert.AreEqual("/arm/joint_commands", recorded.ArmCommands);
+            Assert.AreEqual("", recorded.Odom);
+            Assert.AreEqual("", recorded.CmdVel);
+            Assert.IsFalse(recorded.CmdVel.Contains("cmd_vel"));
+            Assert.IsFalse(recorded.Odom.Contains("odom"));
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.RecordStart));
+        }
+
+        [Test]
+        public void FromDescriptor_So101ArmOnly_DoesNotReplaceArmTopicsWithTheCatalog()
+        {
+            var catalog = new RobotProfile
+            {
+                RobotId = "so101-arm",
+                MaxLinVel = 0.2f,
+                HardMaxLinVel = 0.2f,
+                Topics = new RobotTopics
+                {
+                    CmdVel = "/cmd_vel/teleop",
+                    ArmCommands = "/catalog/arm",
+                    JointStates = "/joint_states",
+                    ControlMode = "/control_mode",
+                    ControlModeActive = "/control_mode/active",
+                    RecordStart = "/vr/record_start",
+                    RecordStop = "/vr/record_stop",
+                    ArmEnable = "/arm/enable",
+                },
+            };
+
+            var profile = RobotProfileFactory.FromDescriptor(Load("so101_arm_only.descriptor.json"), catalog);
+            Assert.AreEqual("/arm/joint_commands", profile.Topics.ArmCommands);
+            Assert.AreEqual("/arm/joint_states", profile.Topics.JointStates);
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.CmdVel));
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.ControlMode));
+            Assert.AreEqual("/vr/record_start", profile.Topics.RecordStart);
+            Assert.AreEqual("/arm/enable", profile.Topics.ArmEnable);
+            Assert.AreEqual(0f, profile.MaxLinVel, 0.0001f);
+        }
+
+        [Test]
+        public void Calibration_CannotRaiseArmOnlySpeed()
+        {
+            var profile = RobotProfileFactory.FromDescriptor(Load("so101_arm_only.descriptor.json"));
+            CalibrationManager.ApplyTo(profile, new RobotCalibration
+            {
+                maxLinVelOverride = 0.5f,
+                maxAngVelOverride = 2.0f,
+            });
+            Assert.AreEqual(0f, profile.MaxLinVel, 0.0001f);
+            Assert.AreEqual(0f, profile.MaxAngVel, 0.0001f);
+            Assert.AreEqual(0f, profile.MaxLatVel, 0.0001f);
+        }
+
+        [Test]
+        public void FromDescriptor_GoldenOmniBot_KeepsBaseHudDriveAndRecorder()
+        {
+            var profile = RobotProfileFactory.FromDescriptor(Load("omnibot.descriptor.json"));
+            Assert.AreEqual(DriveKind.Mecanum, profile.Drive);
+            Assert.AreEqual(3, profile.BaseDof);
+            Assert.AreEqual("/cmd_vel", profile.Topics.CmdVel);
+            Assert.AreEqual("/odom", profile.Topics.Odom);
+            Assert.IsTrue(string.IsNullOrEmpty(profile.Topics.ArmCommands));
+
+            var rows = TeleopHudPlan.Rows(profile);
+            Assert.IsTrue(TeleopHudPlan.Has(rows, TeleopHudPlan.Pose));
+            Assert.IsTrue(TeleopHudPlan.Has(rows, TeleopHudPlan.Velocity));
+            Assert.IsTrue(TeleopHudPlan.Has(rows, TeleopHudPlan.Mode));
+            Assert.IsTrue(TeleopHudPlan.Has(rows, TeleopHudPlan.Arm));
+
+            var drive = ControlSchemeFactory.CreateDriveScheme(profile);
+            Assert.IsInstanceOf<MecanumDriveScheme>(drive);
+
+            var recorded = RecorderTopicSet.FromProfile(profile);
+            Assert.AreEqual("/odom", recorded.Odom);
+            Assert.AreEqual("/cmd_vel", recorded.CmdVel);
         }
 
         [Test]

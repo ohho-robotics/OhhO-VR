@@ -95,17 +95,17 @@ namespace OmniBot.VR.Recording
             var link = RosBridgeLink.Instance;
             if (link == null || !link.IsConnected) return;
 
-            // Subscribe to telemetry topics from the profile
-            if (!string.IsNullOrEmpty(profile.Topics.JointStates))
-                link.Subscribe(profile.Topics.JointStates, "sensor_msgs/JointState", OnArmState);
-            if (!string.IsNullOrEmpty(profile.Topics.Odom))
-                link.Subscribe(profile.Topics.Odom, "nav_msgs/Odometry", OnOdom);
-
-            // Eavesdrop on the command topics we publish
-            if (!string.IsNullOrEmpty(profile.Topics.CmdVel))
-                link.Subscribe(profile.Topics.CmdVel, "geometry_msgs/Twist", OnCmdVel);
-            if (!string.IsNullOrEmpty(profile.Topics.ArmCommands))
-                link.Subscribe(profile.Topics.ArmCommands, "sensor_msgs/JointState", OnArmCommands);
+            // Base topics are omitted when the profile has no base, even if a
+            // string was left on the profile. Arm topics come from the profile.
+            var topics = RecorderTopicSet.FromProfile(profile);
+            if (!string.IsNullOrEmpty(topics.JointStates))
+                link.Subscribe(topics.JointStates, "sensor_msgs/JointState", OnArmState);
+            if (!string.IsNullOrEmpty(topics.Odom))
+                link.Subscribe(topics.Odom, "nav_msgs/Odometry", OnOdom);
+            if (!string.IsNullOrEmpty(topics.CmdVel))
+                link.Subscribe(topics.CmdVel, "geometry_msgs/Twist", OnCmdVel);
+            if (!string.IsNullOrEmpty(topics.ArmCommands))
+                link.Subscribe(topics.ArmCommands, "sensor_msgs/JointState", OnArmCommands);
 
             // Wire episode events
             EpisodeManager.Instance.OnEpisodeStarted += OnEpisodeStarted;
@@ -166,7 +166,7 @@ namespace OmniBot.VR.Recording
                 _latestOdomHeading = Mathf.Atan2(2f * (qw * qz + qx * qy),
                                                   1f - 2f * (qy * qy + qz * qz));
 
-                if (msg.twist?.twist != null)
+                if (msg.twist?.twist != null && _baseDof > 0 && _latestBaseVel != null && _latestBaseVel.Length > 0)
                 {
                     _latestBaseVel[0] = msg.twist.twist.linear?.x ?? 0f;
                     if (_baseDof > 1) _latestBaseVel[1] = msg.twist.twist.linear?.y ?? 0f;
@@ -181,7 +181,7 @@ namespace OmniBot.VR.Recording
             try
             {
                 var msg = JsonConvert.DeserializeObject<TwistMsg>(json);
-                if (msg == null) return;
+                if (msg == null || _baseDof <= 0 || _latestBaseCmd == null || _latestBaseCmd.Length == 0) return;
                 _latestBaseCmd[0] = msg.linear?.x ?? 0f;
                 if (_baseDof > 1) _latestBaseCmd[1] = msg.linear?.y ?? 0f;
                 if (_baseDof > 2) _latestBaseCmd[2] = msg.angular?.z ?? 0f;
@@ -306,6 +306,40 @@ namespace OmniBot.VR.Recording
         {
             [JsonProperty("arm_cmd")] public float[] arm_cmd;
             [JsonProperty("base_cmd")] public float[] base_cmd;
+        }
+    }
+
+    /// <summary>
+    /// ROS topics the recorder subscribes to. Base odometry and base command
+    /// are included only when <see cref="RobotProfile.BaseDof"/> is positive,
+    /// so an arm-only profile records joints and the arm command.
+    /// </summary>
+    public readonly struct RecorderTopicSet
+    {
+        public readonly string JointStates;
+        public readonly string Odom;
+        public readonly string CmdVel;
+        public readonly string ArmCommands;
+
+        public RecorderTopicSet(string jointStates, string odom, string cmdVel, string armCommands)
+        {
+            JointStates = jointStates ?? "";
+            Odom = odom ?? "";
+            CmdVel = cmdVel ?? "";
+            ArmCommands = armCommands ?? "";
+        }
+
+        public static RecorderTopicSet FromProfile(RobotProfile profile)
+        {
+            if (profile?.Topics == null)
+                return new RecorderTopicSet("", "", "", "");
+
+            bool hasBase = profile.BaseDof > 0;
+            return new RecorderTopicSet(
+                profile.Topics.JointStates,
+                hasBase ? profile.Topics.Odom : "",
+                hasBase ? profile.Topics.CmdVel : "",
+                profile.Topics.ArmCommands);
         }
     }
 }
