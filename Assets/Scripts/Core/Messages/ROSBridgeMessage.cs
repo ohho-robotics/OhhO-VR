@@ -59,10 +59,26 @@ namespace OmniBot.VR.Core
         [JsonProperty("type")]
         public string Type { get; set; }
 
+        /// <summary>Minimum milliseconds between messages. 0 means rosbridge's default (no throttle).</summary>
+        [JsonProperty("throttle_rate", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public int ThrottleRate { get; set; }
+
+        /// <summary>rosbridge compression. <c>png</c> wraps the publish JSON in an RGB PNG.</summary>
+        [JsonProperty("compression", NullValueHandling = NullValueHandling.Ignore)]
+        public string Compression { get; set; }
+
         public ROSSubscribeMessage(string topic, string type)
         {
             Topic = topic;
             Type = type;
+        }
+
+        public ROSSubscribeMessage(string topic, string type, int throttleRateMs, string compression)
+        {
+            Topic = topic;
+            Type = type;
+            ThrottleRate = throttleRateMs;
+            Compression = string.IsNullOrEmpty(compression) ? null : compression;
         }
     }
 
