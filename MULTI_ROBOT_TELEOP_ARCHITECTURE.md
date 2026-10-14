@@ -79,8 +79,10 @@ scene/prefab work in the editor._
 ### Implemented (Phase 3 — generalized drive + manipulation)
 
 - **`DriveSchemeBase`** — abstract base class extracting the shared e-stop
-  (both grips, latched until an explicit reset), turbo (right grip, hard-capped
-  at 0.2 m/s), deadman grip (on by default), dead-zone, 20 Hz publish-timing and
+  (A+B or the HUD button, latched until Reset plus a deadman release and
+  re-press), turbo (right trigger, sim sessions only, then clamped to the
+  per-class hard cap — OmniBot 0.2 m/s / 1.0 rad/s), deadman (left grip, on by
+  default; only a kind=sim session may turn it off), dead-zone, 20 Hz publish-timing and
   control-mode management from `MecanumDriveScheme`. Every drive scheme
   inherits it and only implements `ComputeVelocity` → `TwistMsg`.
 - **`DifferentialDriveScheme`** — `[v, ω]` for differential / skid-steer /
@@ -280,8 +282,9 @@ public interface IDriveScheme {
 | thruster (underwater) | stick XY → surge, sway | stick Y → heave, X → yaw | `[surge, sway, heave, yaw]` |
 | fixed-base (industrial arm) | — (no base) | — | arm-only mode |
 
-All clamped to `maxLinVel` / `maxAngVel` from the profile and ramp-limited to the
-robot's own limiter (OmniBot caps 0.2 m/s and 0.05 m/s per 20 Hz tick).
+All clamped to the profile speed and then to the per-class hard cap
+(`HardMaxLinVel` / `HardMaxAngVel`). OmniBot is clamped to 0.2 m/s and 1.0 rad/s.
+Calibration may only lower those caps, including after turbo.
 
 ### 5.2 Manipulation schemes — hand → arm via IK retargeting
 
@@ -329,7 +332,7 @@ Variants selected from `RobotConfig.capabilities` / `armDof`:
 1. Selection → **OmniBot Pro** → `RobotProfile { drive: "mecanum", holonomic: true, armDof: 6, joints: SO101_JOINTS, rosTopics.cmdVel: "/cmd_vel/teleop", … }`.
 2. Factory → `MecanumDriveScheme` + `HandIK6DOF` (analytic SO-101 solver).
 3. **Base:** left stick → vx/vy strafe, right stick X → yaw → `/cmd_vel/teleop` @ 20 Hz.
-4. **Arm:** right-hand pose → analytic IK → 6 joints → `/arm/joint_commands` @ 20 Hz; pinch → `arm_gripper`. Left-hand thumbs-up toggles arm enable; both grips latch e-stop until left X reset. Deadman is on by default; turbo is clamped to 0.2 m/s.
+4. **Arm:** right-hand pose → analytic IK → 6 joints → `/arm/joint_commands` @ 20 Hz; pinch → `arm_gripper`. Left-hand thumbs-up toggles arm enable. A+B or the HUD button latches e-stop until Reset plus a deadman release and re-press. Deadman is the left grip and is on by default (only a kind=sim session may turn it off). Turbo is the right trigger, disabled on a real robot, and clamped to the robot hard cap (OmniBot 0.2 m/s).
 5. All in passthrough: a translucent twin of the SO-101 overlays the real table so the operator previews motion before the real arm catches up.
 
 ---
@@ -416,9 +419,9 @@ the catalog as an SVG/sprite atlas so VR and web share iconography.
 
 ## 9. Safety, latency, comfort (non-negotiable)
 
-- **Deadman:** hold a grip to drive; release → zero velocity.
-- **E-stop:** both grips (already implemented) → `/emergency_stop`; latch until cleared.
-- **Clamping:** every command clamped to `RobotProfile.maxLinVel/maxAngVel` and `JointSpec.min/max`; ramp-limit to the robot's own limiter.
+- **Deadman:** hold the left grip to drive; release → zero velocity on that tick. On by default. Only a kind=sim session may turn it off, and the HUD shows that state.
+- **E-stop:** A+B or the HUD button → `/emergency_stop`, latched. Releasing the buttons or grips does not clear it. Clear takes an explicit Reset plus a deadman release and re-press.
+- **Clamping:** every command is clamped to the per-class hard cap (`HardMaxLinVel` / `HardMaxAngVel`; OmniBot 0.2 m/s and 1.0 rad/s) after calibration and after turbo. Calibration may only lower those caps. Joint commands stay inside `JointSpec.min/max`.
 - **Connection-loss watchdog:** no telemetry for N ms → auto-stop + red HUD.
 - **Rate:** 20 Hz command; IK solve budgeted < 5 ms/frame.
 - **Workspace clamp:** IK targets clamped to the reachable sphere.

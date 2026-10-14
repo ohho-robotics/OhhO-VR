@@ -34,7 +34,7 @@ namespace OmniBot.VR.Control.Drive
             //   Right stick Y → vx (forward)
             //   Right stick X → vy (right strafe)
             float vz    = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
-            float omega = Mathf.Clamp(lx * speedMult, -1f, 1f) * Profile.MaxAngVel;
+            float omega = Mathf.Clamp(lx * speedMult, -1f, 1f) * ActiveAngVelLimit;
             float vx    = Mathf.Clamp(ry * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float vy    = Mathf.Clamp(rx * speedMult, -1f, 1f) * ActiveLinVelLimit;
 

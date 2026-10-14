@@ -6,6 +6,7 @@ using OmniBot.VR.Control;
 using OmniBot.VR.Control.Drive;
 using OmniBot.VR.Core;
 using OmniBot.VR.Core.Platform;
+using OmniBot.VR.UI;
 
 namespace OmniBot.VR.Tests
 {
@@ -30,9 +31,9 @@ namespace OmniBot.VR.Tests
     }
 
     /// <summary>
-    /// Unit tests for teleoperation drive schemes: deadman grip enforcement
-    /// (on by default), latched emergency stop, the hard 0.2 m/s turbo cap,
-    /// and control-mode transitions.
+    /// Unit tests for teleoperation drive schemes: left-grip deadman (on unless
+    /// the session is kind=sim), latched A+B / HUD e-stop, per-class hard speed
+    /// caps, and control-mode transitions.
     /// </summary>
     public class TeleopControlTests
     {
@@ -71,14 +72,15 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
-        public void EmergencyStop_BothGripsPressed_ActivatesEStopAndPublishesZeroTwist()
+        public void EmergencyStop_AAndB_ActivatesEStopAndPublishesZeroTwist()
         {
             var input = new TeleopInput
             {
-                BothGrips = true,
-                BothGripsPressed = true,
+                ButtonA = true,
+                ButtonB = true,
+                EmergencyStopPressed = true,
                 LeftGrip = true,
-                RightGrip = true,
+                LeftStick = new Vector2(0f, 1f),
                 DeltaTime = 0.05f
             };
 
@@ -101,16 +103,16 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
-        public void EmergencyStop_BothGrips_LatchesUntilExplicitReset()
+        public void EmergencyStop_StaysLatchedAfterGripsRelease()
         {
-            // Both grips while the stick is deflected. That chord is e-stop,
-            // not deadman-plus-turbo.
             var pressInput = new TeleopInput
             {
-                BothGrips = true,
-                BothGripsPressed = true,
+                ButtonA = true,
+                ButtonB = true,
+                EmergencyStopPressed = true,
                 LeftGrip = true,
                 RightGrip = true,
+                BothGrips = true,
                 LeftStick = new Vector2(0f, 1f),
                 DeltaTime = 0.1f
             };
@@ -119,35 +121,23 @@ namespace OmniBot.VR.Tests
 
             _link.Clear();
 
-            // Reset is ignored while the e-stop gesture is still held.
-            var resetWhileHeld = new TeleopInput
+            // Releasing A+B and both grips must not clear the latch, and must
+            // not publish a drive command while the stick is still deflected.
+            var releaseGrips = new TeleopInput
             {
-                BothGrips = true,
-                LeftGrip = true,
-                RightGrip = true,
-                ResetEmergencyStop = true,
-                LeftStick = new Vector2(0f, 1f),
-                DeltaTime = 0.1f
-            };
-            _scheme.Tick(ref resetWhileHeld, _link);
-            Assert.IsTrue(_scheme.IsEmergencyStopActive, "E-stop stays latched while both grips are held");
-
-            _link.Clear();
-
-            // Releasing to the right grip alone would otherwise be deadman + turbo.
-            var releaseToTurbo = new TeleopInput
-            {
+                ButtonA = false,
+                ButtonB = false,
                 BothGrips = false,
                 BothGripsReleased = true,
                 LeftGrip = false,
-                RightGrip = true,
+                RightGrip = false,
                 LeftStick = new Vector2(0f, 1f),
                 DeltaTime = 0.1f
             };
-            _scheme.Tick(ref releaseToTurbo, _link);
+            _scheme.Tick(ref releaseGrips, _link);
 
             Assert.IsTrue(_scheme.IsEmergencyStopActive,
-                "Releasing the grips must not clear e-stop; one grip is the deadman and right grip is turbo");
+                "E-stop stays latched after the grips and A+B are released");
             foreach (var (topic, msg) in _link.Published)
             {
                 if (topic == _profile.Topics.CmdVel && msg is TwistMsg twist)
@@ -157,29 +147,99 @@ namespace OmniBot.VR.Tests
                     Assert.AreEqual(0f, twist.angular.z, 0.0001f);
                 }
             }
+        }
 
-            _link.Clear();
-
-            // Explicit reset (left X), then deadman + stick may drive again.
-            var resetInput = new TeleopInput
+        [Test]
+        public void EmergencyStop_ClearRequiresResetThenDeadmanReleaseAndRepress()
+        {
+            var pressInput = new TeleopInput
             {
-                ResetEmergencyStop = true,
+                ButtonA = true,
+                ButtonB = true,
+                EmergencyStopPressed = true,
                 LeftGrip = true,
-                RightGrip = false,
                 LeftStick = new Vector2(0f, 1f),
                 DeltaTime = 0.1f
             };
-            _scheme.Tick(ref resetInput, _link);
+            _scheme.Tick(ref pressInput, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive);
+
+            // Reset is ignored while A+B is still held.
+            var resetWhileChord = new TeleopInput
+            {
+                ButtonA = true,
+                ButtonB = true,
+                LeftGrip = true,
+                ResetEmergencyStop = true,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref resetWhileChord, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive, "E-stop stays latched while A+B is held");
+
+            // Reset while the deadman is still held does not resume driving.
+            var resetWhileGrip = new TeleopInput
+            {
+                ResetEmergencyStop = true,
+                LeftGrip = true,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref resetWhileGrip, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive, "Reset alone does not clear e-stop");
+
+            _link.Clear();
+            var releaseDeadman = new TeleopInput
+            {
+                LeftGrip = false,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref releaseDeadman, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive, "Releasing the deadman does not clear e-stop by itself");
+
+            _link.Clear();
+            var repress = new TeleopInput
+            {
+                LeftGrip = true,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref repress, _link);
 
             Assert.IsFalse(_scheme.IsEmergencyStopActive);
             var cleared = _link.Published.Find(p => p.topic == _profile.Topics.EmergencyStop);
-            Assert.IsNotNull(cleared.msg, "Explicit reset publishes /emergency_stop false");
+            Assert.IsNotNull(cleared.msg, "Deadman re-press after Reset publishes /emergency_stop false");
             Assert.IsFalse(((BoolMsg)cleared.msg).data);
 
             var cmdVel = _link.Published.Find(p => p.topic == _profile.Topics.CmdVel);
-            Assert.IsNotNull(cmdVel.msg, "Driving resumes only after the explicit reset");
+            Assert.IsNotNull(cmdVel.msg, "Driving resumes only after Reset plus deadman release and re-press");
             Assert.Greater(((TwistMsg)cmdVel.msg).linear.x, 0f);
-            Assert.LessOrEqual(((TwistMsg)cmdVel.msg).linear.x, _profile.MaxLinVel);
+            Assert.LessOrEqual(((TwistMsg)cmdVel.msg).linear.x, 0.2f);
+        }
+
+        [Test]
+        public void EmergencyStop_HudButton_LatchesUntilDeadmanCycle()
+        {
+            var hud = new TeleopInput
+            {
+                HudEmergencyStop = true,
+                LeftGrip = true,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref hud, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive);
+
+            var release = new TeleopInput
+            {
+                HudEmergencyStop = false,
+                LeftGrip = false,
+                LeftStick = new Vector2(0f, 1f),
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref release, _link);
+            Assert.IsTrue(_scheme.IsEmergencyStopActive, "Releasing the HUD button does not clear e-stop");
         }
 
         [Test]
@@ -304,10 +364,25 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
-        public void Deadman_BothGripsHeld_TriggersEStopInsteadOfDrive()
+        public void Deadman_RightGripAlone_DoesNotDrive()
         {
-            _scheme.RequireDeadman = true;
+            var input = new TeleopInput
+            {
+                LeftStick = new Vector2(0f, 1f),
+                LeftGrip = false,
+                RightGrip = true,
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref input, _link);
 
+            Assert.IsFalse(_scheme.IsEmergencyStopActive, "Grips are not the e-stop chord");
+            var cmdVel = _link.Published.Find(p => p.topic == _profile.Topics.CmdVel);
+            Assert.IsNull(cmdVel.msg, "Right grip is not the deadman");
+        }
+
+        [Test]
+        public void Deadman_BothGrips_DoesNotTriggerEStop()
+        {
             var input = new TeleopInput
             {
                 LeftStick = new Vector2(0f, 1f),
@@ -319,10 +394,10 @@ namespace OmniBot.VR.Tests
             };
             _scheme.Tick(ref input, _link);
 
-            Assert.IsTrue(_scheme.IsEmergencyStopActive);
-            var eStopMsg = _link.Published.Find(p => p.topic == _profile.Topics.EmergencyStop);
-            Assert.IsNotNull(eStopMsg.msg);
-            Assert.IsTrue(((BoolMsg)eStopMsg.msg).data);
+            Assert.IsFalse(_scheme.IsEmergencyStopActive);
+            var cmdVel = _link.Published.Find(p => p.topic == _profile.Topics.CmdVel);
+            Assert.IsNotNull(cmdVel.msg, "Left grip still drives when the right grip is also held");
+            Assert.Greater(((TwistMsg)cmdVel.msg).linear.x, 0f);
         }
 
         [Test]
@@ -351,8 +426,33 @@ namespace OmniBot.VR.Tests
             });
             Assert.IsNotNull(derived);
             Assert.IsTrue(derived.RequireDeadman, "Catalog profiles keep the deadman on");
+            Assert.AreEqual(SessionKind.Real, derived.Kind);
             Assert.Greater(derived.MaxLinVel, DriveSchemeBase.HardTurboLinCapMps,
                 "A fast catalog speed must not be what disables the deadman");
+            Assert.Greater(derived.HardMaxLinVel, 0f);
+            Assert.Greater(derived.HardMaxAngVel, 0f);
+
+            var omni = RobotProfileFactory.FromGarageRobot(new GarageRobot
+            {
+                RobotType = new VrRobotType { Id = "mobile" },
+                Category = new VrCategory { Id = "mobile-manipulator" },
+                HardwareModel = new VrHardwareModel
+                {
+                    Id = "omnibot-pro",
+                    Name = "OmniBot Pro",
+                    Locomotion = "mecanum",
+                    HasArm = true,
+                }
+            });
+            Assert.IsNotNull(omni);
+            Assert.AreEqual(RobotConfig.MAX_LINEAR_VEL, omni.HardMaxLinVel, 0.0001f);
+            Assert.AreEqual(RobotConfig.MAX_ANGULAR_VEL, omni.HardMaxAngVel, 0.0001f);
+            Assert.IsTrue(omni.RequireDeadman);
+            Assert.AreEqual(SessionKind.Real, omni.Kind);
+            StringAssert.Contains("Deadman ON", _scheme.HudHint);
+            StringAssert.DoesNotContain("Release to clear", OnboardingController.SafetyHint);
+            StringAssert.Contains("0.2 m/s", OnboardingController.SafetyHint);
+            StringAssert.Contains("latches", OnboardingController.SafetyHint);
 
             var blocked = new TeleopInput
             {
@@ -367,14 +467,27 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
+        public void Deadman_RealSession_IgnoresOptOut()
+        {
+            Assert.AreEqual(SessionKind.Real, _profile.Kind);
+            _profile.RequireDeadman = false;
+            _profile.DisableDeadmanForSimulation();
+            _scheme.RequireDeadman = false;
+            _scheme.Configure(_profile);
+            Assert.IsTrue(_profile.RequireDeadman, "A real session cannot turn the deadman off");
+            Assert.IsTrue(_scheme.RequireDeadman);
+            StringAssert.Contains("Deadman ON", _scheme.HudHint);
+        }
+
+        [Test]
         public void Deadman_WhenExplicitlyDisabledForSimulation_AllowsDrivingWithoutGrips()
         {
-            Assert.IsTrue(RobotProfile.DeadmanOptOutAllowed,
-                "EditMode runs in the editor, where the simulation opt-out is allowed");
+            _profile.Kind = SessionKind.Sim;
             _profile.DisableDeadmanForSimulation();
             _scheme.Configure(_profile);
             Assert.IsFalse(_profile.RequireDeadman);
             Assert.IsFalse(_scheme.RequireDeadman);
+            StringAssert.Contains("Deadman OFF", _scheme.HudHint);
 
             var input = new TeleopInput
             {
@@ -391,14 +504,46 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
-        public void TurboMode_WithRightGripAlone_AppliesMultiplierClampedToMax()
+        public void Turbo_RealSession_IgnoresRightTrigger()
         {
-            // Half deflection forward. Left grip is the deadman; right grip is turbo.
+            Assert.AreEqual(SessionKind.Real, _profile.Kind);
             var normalInput = new TeleopInput
             {
                 LeftStick = new Vector2(0f, 0.5f),
                 LeftGrip = true,
-                RightGrip = false,
+                RightTrigger = false,
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref normalInput, _link);
+            var normalTwist = (TwistMsg)_link.Published.Find(p => p.topic == _profile.Topics.CmdVel).msg;
+
+            _link.Clear();
+            var triggerInput = new TeleopInput
+            {
+                LeftStick = new Vector2(0f, 0.5f),
+                LeftGrip = true,
+                RightTrigger = true,
+                DeltaTime = 0.1f
+            };
+            _scheme.Tick(ref triggerInput, _link);
+            var triggerTwist = (TwistMsg)_link.Published.Find(p => p.topic == _profile.Topics.CmdVel).msg;
+            Assert.AreEqual(normalTwist.linear.x, triggerTwist.linear.x, 0.0001f,
+                "Turbo is disabled on a real robot");
+            Assert.LessOrEqual(triggerTwist.linear.x, 0.2f);
+            StringAssert.Contains("Turbo disabled", _scheme.HudHint);
+        }
+
+        [Test]
+        public void TurboMode_SimRightTrigger_AppliesMultiplierClampedToHardCap()
+        {
+            _profile.Kind = SessionKind.Sim;
+            _scheme.Configure(_profile);
+
+            var normalInput = new TeleopInput
+            {
+                LeftStick = new Vector2(0f, 0.5f),
+                LeftGrip = true,
+                RightTrigger = false,
                 DeltaTime = 0.1f
             };
             _scheme.Tick(ref normalInput, _link);
@@ -409,32 +554,36 @@ namespace OmniBot.VR.Tests
             var turboInput = new TeleopInput
             {
                 LeftStick = new Vector2(0f, 0.5f),
-                RightGrip = true, // Turbo
-                LeftGrip = false,
+                LeftGrip = true,
+                RightTrigger = true,
                 DeltaTime = 0.1f
             };
             _scheme.Tick(ref turboInput, _link);
             var turboTwist = (TwistMsg)_link.Published.Find(p => p.topic == _profile.Topics.CmdVel).msg;
 
             Assert.Greater(turboTwist.linear.x, normalTwist.linear.x, "Turbo should produce higher speed");
-            Assert.LessOrEqual(turboTwist.linear.x, _profile.MaxLinVel, "Speed must be clamped to MaxLinVel");
             Assert.LessOrEqual(turboTwist.linear.x, 0.2f, "Turbo must not exceed the hard 0.2 m/s cap");
+            StringAssert.Contains("clamped to 0.2 m/s", _scheme.HudHint);
         }
 
         [Test]
         public void Turbo_ProfileMaxLinVelOfOne_NeverExceedsHardCap()
         {
             Assert.AreEqual(0.2f, DriveSchemeBase.HardTurboLinCapMps,
-                "The turbo cap is a constant profiles cannot raise");
+                "The OmniBot linear cap is the RobotConfig constant profiles cannot raise");
+            Assert.AreEqual(RobotConfig.MAX_LINEAR_VEL, DriveSchemeBase.HardTurboLinCapMps);
 
+            _profile.Kind = SessionKind.Sim;
             _profile.MaxLinVel = 1.0f;
+            _profile.MaxAngVel = 5.0f;
             _scheme.Configure(_profile);
 
             var turboInput = new TeleopInput
             {
                 LeftStick = new Vector2(0f, 1f),
-                RightGrip = true,
-                LeftGrip = false,
+                RightStick = new Vector2(1f, 0f),
+                LeftGrip = true,
+                RightTrigger = true,
                 DeltaTime = 0.1f
             };
             _scheme.Tick(ref turboInput, _link);
@@ -442,12 +591,15 @@ namespace OmniBot.VR.Tests
             var turboTwist = (TwistMsg)_link.Published.Find(p => p.topic == _profile.Topics.CmdVel).msg;
             Assert.Greater(turboTwist.linear.x, 0f, "Full stick with turbo still commands forward motion");
             Assert.AreEqual(0.2f, turboTwist.linear.x, 0.0001f,
-                "Turbo speed is min(profile MaxLinVel, 0.2 m/s)");
+                "Commanded speed is clamped to the OmniBot hard cap after turbo");
             Assert.LessOrEqual(turboTwist.linear.x, 0.2f);
             Assert.LessOrEqual(Mathf.Abs(turboTwist.linear.y), 0.2f);
             Assert.LessOrEqual(Mathf.Abs(turboTwist.linear.z), 0.2f);
+            Assert.AreEqual(1.0f, Mathf.Abs(turboTwist.angular.z), 0.0001f,
+                "Yaw is clamped to the OmniBot hard angular cap");
+            Assert.LessOrEqual(Mathf.Abs(turboTwist.angular.z), RobotConfig.MAX_ANGULAR_VEL);
 
-            // A profile slower than the constant keeps its own lower limit.
+            // A profile slower than the hard cap keeps its own lower limit.
             _link.Clear();
             _profile.MaxLinVel = 0.1f;
             _scheme.Configure(_profile);

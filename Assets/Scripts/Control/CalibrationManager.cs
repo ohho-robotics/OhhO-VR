@@ -86,12 +86,31 @@ namespace OmniBot.VR.Control
         {
             if (profile == null || cal == null) return;
 
+            RobotClassCaps.Ensure(profile);
+
             profile.ArmBaseHeight += cal.armBaseHeightOffset;
             profile.HandWorkspaceRadius *= cal.workspaceRadiusScale;
-            if (cal.maxLinVelOverride > 0f) profile.MaxLinVel = cal.maxLinVelOverride;
-            if (cal.maxAngVelOverride > 0f) profile.MaxAngVel = cal.maxAngVelOverride;
+            // Calibration may only lower a cap. The class hard cap is applied
+            // after that, so an override of 0.5 cannot raise OmniBot past 0.2 m/s.
+            profile.MaxLinVel = CapVelocity(profile.MaxLinVel, cal.maxLinVelOverride, profile.HardMaxLinVel);
+            profile.MaxAngVel = CapVelocity(profile.MaxAngVel, cal.maxAngVelOverride, profile.HardMaxAngVel);
             if (cal.ikLocationOverride == 0) profile.IkLocation = IkLocation.Headset;
             else if (cal.ikLocationOverride == 1) profile.IkLocation = IkLocation.Robot;
+        }
+
+        /// <summary>
+        /// A positive override may only lower <paramref name="current"/>. The result
+        /// is then clamped to <paramref name="hardCap"/> when that cap is set.
+        /// A non-positive override leaves the current value, still under the hard cap.
+        /// </summary>
+        public static float CapVelocity(float current, float overrideValue, float hardCap)
+        {
+            float value = current;
+            if (overrideValue > 0f)
+                value = Mathf.Min(current, overrideValue);
+            if (hardCap > 0f)
+                value = Mathf.Min(value, hardCap);
+            return Mathf.Max(0f, value);
         }
 
         /// <summary>Reset calibration for a robot id to defaults.</summary>

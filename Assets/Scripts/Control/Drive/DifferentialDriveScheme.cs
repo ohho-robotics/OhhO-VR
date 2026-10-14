@@ -23,7 +23,7 @@ namespace OmniBot.VR.Control.Drive
             hasInput = hasFwd || hasRot;
 
             float v     = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
-            float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
+            float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * ActiveAngVelLimit;
 
             // No strafe — linear.y stays zero (non-holonomic constraint).
             return new TwistMsg(

@@ -1,6 +1,5 @@
 using UnityEngine;
 using OmniBot.VR.Core;
-using OmniBot.VR.Control.Drive;
 
 namespace OmniBot.VR.Input
 {
@@ -12,9 +11,10 @@ namespace OmniBot.VR.Input
     ///   Left  thumbstick X  → linear.y  (strafe left / right)
     ///   Right thumbstick X  → angular.z (rotate)
     ///
-    /// Turbo mode: hold right grip → 2× speed, clamped to 0.2 m/s.
-    /// Emergency stop: both grips latch until left controller X. Releasing the
-    /// grips does not clear it (the grips are also deadman/turbo on the new path).
+    /// Deadman: hold the left grip. Release publishes zero on that tick.
+    /// Turbo is disabled on this real-robot path.
+    /// Emergency stop: A+B latches. Clearing takes left-controller X (Reset)
+    /// plus a deadman release and re-press. Releasing A+B or the grips does not.
     ///
     /// Publishing behaviour:
     ///   - Publishes at CMD_VEL_PUBLISH_HZ while thumbsticks are active.
@@ -26,13 +26,14 @@ namespace OmniBot.VR.Input
     {
         // ── Constants ────────────────────────────────────────────────────────
         private const float DeadZone            = 0.1f;
-        private const float TurboMultiplier     = 2.0f;
         private const float ZeroStopDelay       = 0.1f;  // s before we stop publishing zeros
         private const float NavModeRevertDelay  = 0.5f;  // s of no input → revert to nav2
 
         // ── State ────────────────────────────────────────────────────────────
         private bool  _emergencyStopActive  = false;
-        private bool  _prevBothGrips        = false;
+        private bool  _prevEmergencyChord   = false;
+        private bool  _resetAccepted        = false;
+        private bool  _deadmanReleasedAfterReset = false;
         private bool  _isPublishing         = false;
         private float _noInputTimer         = 0f;
         private float _noInputModeTimer     = 0f;
@@ -52,43 +53,66 @@ namespace OmniBot.VR.Input
         {
             if (!ROSBridgeClient.Instance.IsConnected) return;
 
-            // ── Emergency stop: both grip buttons ────────────────────────────
-            bool leftGrip  = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger,  OVRInput.Controller.LTouch);
-            bool rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger, OVRInput.Controller.RTouch);
+            // ── Deadman is the left grip. A+B latches e-stop. ───────────────
+            bool leftGrip = OVRInput.Get(OVRInput.Button.PrimaryHandTrigger, OVRInput.Controller.LTouch) ||
+                            OVRInput.Get(OVRInput.Axis1D.PrimaryHandTrigger, OVRInput.Controller.LTouch) > 0.8f;
+            bool buttonA = OVRInput.Get(OVRInput.Button.One, OVRInput.Controller.RTouch);
+            bool buttonB = OVRInput.Get(OVRInput.Button.Two, OVRInput.Controller.RTouch);
+            bool emergencyChord = buttonA && buttonB;
 
-            // Also accept grip axes for analog grip buttons
-            leftGrip  = leftGrip  || OVRInput.Get(OVRInput.Axis1D.PrimaryHandTrigger,   OVRInput.Controller.LTouch) > 0.8f;
-            rightGrip = rightGrip || OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger,  OVRInput.Controller.RTouch) > 0.8f;
-
-            bool bothGrips = leftGrip && rightGrip;
-
-            if (bothGrips && !_prevBothGrips)
+            if (emergencyChord && !_prevEmergencyChord)
             {
-                // Rising edge: latch emergency stop. Grip release does not clear it.
                 _emergencyStopActive = true;
-                var stopMsg = new BoolMsg(true);
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
+                _resetAccepted = false;
+                _deadmanReleasedAfterReset = false;
+                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(true));
                 ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, new TwistMsg(
                     new Vector3Msg(0f, 0f, 0f),
                     new Vector3Msg(0f, 0f, 0f)));
+                _isPublishing = false;
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
-                Debug.Log("[BaseController] Emergency stop LATCHED. Left X resets it.");
+                Debug.Log("[BaseController] Emergency stop LATCHED. Reset, then release and re-press the left grip.");
             }
-            else if (_emergencyStopActive && !bothGrips &&
-                     OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch))
+            else if (_emergencyStopActive && !emergencyChord)
             {
-                // Explicit reset (left X). Ignored while both grips are still held.
-                _emergencyStopActive = false;
-                var stopMsg = new BoolMsg(false);
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
-                OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
-                OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
-                Debug.Log("[BaseController] Emergency stop reset.");
+                if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch))
+                    _resetAccepted = true;
+                if (_resetAccepted && !leftGrip)
+                    _deadmanReleasedAfterReset = true;
+                if (_resetAccepted && _deadmanReleasedAfterReset && leftGrip)
+                {
+                    _emergencyStopActive = false;
+                    _resetAccepted = false;
+                    _deadmanReleasedAfterReset = false;
+                    ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(false));
+                    OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
+                    OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
+                    Debug.Log("[BaseController] Emergency stop reset after deadman re-press.");
+                }
             }
-            _prevBothGrips = bothGrips;
+            _prevEmergencyChord = emergencyChord;
 
             if (_emergencyStopActive) return;
+
+            if (!leftGrip)
+            {
+                if (_isPublishing)
+                {
+                    ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, new TwistMsg(
+                        new Vector3Msg(0f, 0f, 0f),
+                        new Vector3Msg(0f, 0f, 0f)));
+                    _isPublishing = false;
+                }
+                _noInputTimer += Time.deltaTime;
+                _noInputModeTimer += Time.deltaTime;
+                if (_inTeleopMode && _noInputModeTimer >= NavModeRevertDelay)
+                {
+                    _inTeleopMode = false;
+                    PublishControlMode("nav2");
+                }
+                return;
+            }
 
             // ── Read thumbsticks ─────────────────────────────────────────────
             Vector2 leftStick  = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick,   OVRInput.Controller.LTouch);
@@ -101,17 +125,15 @@ namespace OmniBot.VR.Input
 
             bool hasInput = Mathf.Abs(lx) > 0f || Mathf.Abs(ly) > 0f || Mathf.Abs(rx) > 0f;
 
-            // ── Turbo mode: right grip held (but NOT both grips) ─────────────
-            bool turbo = rightGrip && !leftGrip;
-            float speedMult = turbo ? TurboMultiplier : 1.0f;
+            // Turbo is disabled on this real-robot path. Speed stays inside the
+            // OmniBot hard cap (0.2 m/s, 1.0 rad/s) with no multiplier.
             float linCap = RobotConfig.MAX_LINEAR_VEL;
-            if (turbo)
-                linCap = Mathf.Min(linCap, DriveSchemeBase.HardTurboLinCapMps);
+            float angCap = RobotConfig.MAX_ANGULAR_VEL;
 
             // ── Compute velocity ─────────────────────────────────────────────
-            float vx      = Mathf.Clamp(ly * speedMult, -1f, 1f) * linCap;
-            float vy      = Mathf.Clamp(lx * speedMult, -1f, 1f) * linCap;
-            float omega   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * RobotConfig.MAX_ANGULAR_VEL;
+            float vx      = Mathf.Clamp(ly, -1f, 1f) * linCap;
+            float vy      = Mathf.Clamp(lx, -1f, 1f) * linCap;
+            float omega   = Mathf.Clamp(-rx, -1f, 1f) * angCap;
 
             // ── Control mode management ──────────────────────────────────────
             if (hasInput)

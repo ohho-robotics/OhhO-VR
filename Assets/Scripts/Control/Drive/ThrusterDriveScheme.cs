@@ -31,7 +31,7 @@ namespace OmniBot.VR.Control.Drive
             float surge = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float sway  = Mathf.Clamp(lx * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float heave = Mathf.Clamp(ry * speedMult, -1f, 1f) * ActiveLinVelLimit;
-            float yaw   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
+            float yaw   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * ActiveAngVelLimit;
 
             return new TwistMsg(
                 new Vector3Msg(surge, sway, heave),

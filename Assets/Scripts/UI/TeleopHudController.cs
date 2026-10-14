@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using OmniBot.VR.Control;
 using OmniBot.VR.Core;
 using OmniBot.VR.Recording;
 
@@ -59,6 +60,7 @@ namespace OmniBot.VR.UI
         [SerializeField] private TMP_Text robotNameText;
         [SerializeField] private TMP_Text hintsText;
         [SerializeField] private Button backButton;
+        [SerializeField] private Button emergencyStopButton;
 
         // ── State ─────────────────────────────────────────────────────────────
         private App.OhhoVrApp _app;
@@ -92,6 +94,7 @@ namespace OmniBot.VR.UI
             if (discardButton != null) discardButton.onClick.AddListener(OnDiscard);
             if (exportButton != null) exportButton.onClick.AddListener(OnExportAll);
             if (backButton != null) backButton.onClick.AddListener(OnBack);
+            if (emergencyStopButton != null) emergencyStopButton.onClick.AddListener(OnHudEmergencyStop);
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged += OnConnectionState;
@@ -120,6 +123,7 @@ namespace OmniBot.VR.UI
             if (discardButton != null) discardButton.onClick.RemoveListener(OnDiscard);
             if (exportButton != null) exportButton.onClick.RemoveListener(OnExportAll);
             if (backButton != null) backButton.onClick.RemoveListener(OnBack);
+            if (emergencyStopButton != null) emergencyStopButton.onClick.RemoveListener(OnHudEmergencyStop);
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged -= OnConnectionState;
@@ -224,6 +228,18 @@ namespace OmniBot.VR.UI
             }
 
             if (modeText != null) modeText.text = _controlMode;
+            RefreshHints();
+        }
+
+        private void OnHudEmergencyStop()
+        {
+            if (_teleop != null) _teleop.RequestHudEmergencyStop();
+        }
+
+        private void RefreshHints()
+        {
+            if (hintsText == null || _teleop == null) return;
+            hintsText.text = $"{_teleop.DriveHint}\n{_teleop.ManipHint}";
         }
 
         // ── Camera ────────────────────────────────────────────────────────────
@@ -351,8 +367,7 @@ namespace OmniBot.VR.UI
             var profile = _teleop != null ? _teleop.Profile : null;
             if (robotNameText != null)
                 robotNameText.text = profile != null ? profile.Name : "No robot selected";
-            if (hintsText != null && _teleop != null)
-                hintsText.text = $"{_teleop.DriveHint}\n{_teleop.ManipHint}";
+            RefreshHints();
         }
 
         // ── Navigation ────────────────────────────────────────────────────────

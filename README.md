@@ -90,7 +90,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (53 tests in namespace `OmniBot.VR.Tests`, covering control scheme factory, drive spec parsing, Fabrik IK solver, calibration persistence, and teleop deadman/e-stop safety paths). Run them locally in batch mode or via the Unity Test Runner.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (60 tests in namespace `OmniBot.VR.Tests`, covering control scheme factory, drive spec parsing, Fabrik IK solver, calibration persistence, and teleop deadman/e-stop safety paths). Run them locally in batch mode or via the Unity Test Runner.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) using three repository secrets configured at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). If any of these secrets are missing, the workflow fails clearly with an error message instructing the maintainer to set the credentials.
 
@@ -136,10 +136,10 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 | Left thumbstick Y | Forward / backward (linear.x) |
 | Left thumbstick X | Strafe left / right (linear.y) |
 | Right thumbstick X | Rotate left / right (angular.z) |
-| Left / Right grip (hold) | Deadman grip, on by default (hold one grip to drive; release → zero velocity). Opting out is explicit and editor/simulator only. |
-| Right grip (hold) | Turbo mode (2× speed, clamped to 0.2 m/s). Right grip alone also counts as the deadman. |
-| **Both grips simultaneously** | **Emergency stop** (latches until an explicit reset; immediately publishes zero velocity and /emergency_stop). Releasing the grips does not clear it, because a grip is also the deadman and the right grip is turbo. |
-| Left controller X | Reset a latched emergency stop (ignored while both grips are still held) |
+| Left grip (hold) | Deadman, on by default. Release publishes zero velocity on that same tick. Only a kind=sim session may turn it off; the HUD shows ON or OFF. |
+| Right trigger | Turbo (2×) in a kind=sim session only, clamped to the robot hard cap (OmniBot 0.2 m/s and 1.0 rad/s). Disabled on a real robot. |
+| **A + B, or the HUD e-stop button** | **Emergency stop.** Latches immediately, publishes zero velocity and /emergency_stop. Releasing A+B, the HUD button, or the grips does not clear it. |
+| Left controller X (Reset) | Starts clearing a latched e-stop. Motion stays stopped until the deadman is released and pressed again. Ignored while A+B is still held. |
 | Left controller B | Hide / show the OhhO Screen |
 | Right thumbstick press | Cycle camera feed |
 
