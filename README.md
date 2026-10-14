@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (48 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -127,8 +127,8 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 | Left thumbstick Y | Forward / backward (linear.x) |
 | Left thumbstick X | Strafe left / right (linear.y) |
 | Right thumbstick X | Rotate left / right (angular.z) |
-| Right grip (hold) | Turbo mode (2× speed, clamped to 0.2 m/s) |
-| **Both grips simultaneously** | **Emergency stop** (held = stop, release = clear) |
+| Right grip (hold) | Turbo mode (2× `MaxLinVel`). The OmniBot profile starts at 0.2 m/s, so turbo commands 0.4 m/s. A calibration override can raise the cap. |
+| **Both grips simultaneously** | **Software stop** (held = stop, release = clear). This is not the hardware e-stop. |
 | Left controller B | Hide / show the OhhO Screen |
 | Right thumbstick press | Cycle camera feed |
 
@@ -306,6 +306,16 @@ The visionOS port is planned for a future release. Key design decisions:
 | Text renders magenta | The TMP font materials use `TextMeshPro/Distance Field`; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
 
 ---
+
+## 14. Safety case
+
+Driving a real robot from this client needs the written case, not only the controls table above.
+
+- [docs/safety-case.md](docs/safety-case.md) — FMEA of the headset-to-robot path, with each control tied to a file and a test, or marked pending
+- [docs/operator-rules.md](docs/operator-rules.md) — hardware e-stop, line of sight, speed cap, area clearance, Varun present (rules version 1)
+- [docs/release-signoff-checklist.md](docs/release-signoff-checklist.md) — release gate. It is unsigned.
+
+`RealSessionGate.TryBegin(SessionTarget.Real)` blocks a real session until rules version 1 is accepted. Sim sessions are not blocked. The garage pick path does not yet know which target it is starting, so the app does not call the gate. The TODO is on `RealSessionGate`.
 
 ## Licence
 
