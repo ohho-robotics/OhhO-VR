@@ -349,8 +349,20 @@ namespace OmniBot.VR.UI
         private void RefreshRobotLabel()
         {
             var profile = _teleop != null ? _teleop.Profile : null;
+            var session = OmniBot.VR.Control.Session.ActiveSession.Current;
             if (robotNameText != null)
-                robotNameText.text = profile != null ? profile.Name : "No robot selected";
+            {
+                if (profile != null && session != null)
+                {
+                    robotNameText.text = OmniBot.VR.Control.Session.SessionBannerStyle.LabelFor(session.Kind)
+                        + "  ·  " + profile.Name;
+                    robotNameText.color = OmniBot.VR.Control.Session.SessionBannerStyle.ColorFor(session.Kind);
+                }
+                else
+                    robotNameText.text = profile != null ? profile.Name : "No robot selected";
+            }
+            if (session != null)
+                OmniBot.VR.UI.Session.SessionModeBanner.Apply(gameObject, session.Kind);
             if (hintsText != null && _teleop != null)
                 hintsText.text = $"{_teleop.DriveHint}\n{_teleop.ManipHint}";
         }

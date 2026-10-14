@@ -13,6 +13,7 @@ using OmniBot.VR.UI;
 using OmniBot.VR.UI.Auth;
 using OmniBot.VR.UI.Console;
 using OmniBot.VR.UI.Garage;
+using OmniBot.VR.UI.Session;
 using OmniBot.VR.UI.Teleop;
 using OmniBot.VR.Video;
 
@@ -337,8 +338,10 @@ namespace OmniBot.VR.Editor
             var login = BuildLoginPage(authScreen.transform);
             var console = BuildConsolePage(authScreen.transform);
             var garage = BuildGaragePage(authScreen.transform);
+            var session = BuildSessionPage(authScreen.transform);
             console.SetActive(false);
             garage.SetActive(false);
+            session.SetActive(false);
 
             var teleop = BuildTeleopPage(teleopScreen.transform);
             teleop.SetActive(false);
@@ -559,6 +562,15 @@ namespace OmniBot.VR.Editor
             return page;
         }
 
+        // ── Session picker (garage → simulate / drive real → teleop) ─────────
+        private static GameObject BuildSessionPage(Transform parent)
+        {
+            var page = MakePage("Session Page", parent);
+            if (page.GetComponent<SessionPickerPanel>() == null)
+                page.AddComponent<SessionPickerPanel>();
+            return page;
+        }
+
         // ── Teleop ────────────────────────────────────────────────────────────
         private static GameObject BuildTeleopPage(Transform parent)
         {
@@ -688,6 +700,7 @@ namespace OmniBot.VR.Editor
             var login = authScreen.transform.Find("Login Page")?.gameObject;
             var console = authScreen.transform.Find("Console Page")?.gameObject;
             var garage = authScreen.transform.Find("Garage Page")?.gameObject;
+            var session = authScreen.transform.Find("Session Page")?.gameObject;
             
             var teleop = teleopScreen.transform.Find("Teleop Page")?.gameObject;
             var cameraPage = cameraScreen.transform.Find("Camera Page")?.gameObject;
@@ -707,6 +720,8 @@ namespace OmniBot.VR.Editor
             appSo.FindProperty("loginPanel").objectReferenceValue = login;
             appSo.FindProperty("consolePanel").objectReferenceValue = console;
             appSo.FindProperty("garagePanel").objectReferenceValue = garage;
+            var sessionProp = appSo.FindProperty("sessionPickerPanel");
+            if (sessionProp != null) sessionProp.objectReferenceValue = session;
             appSo.FindProperty("teleopPanel").objectReferenceValue = teleop;
             
             var camProp = appSo.FindProperty("cameraPanel");

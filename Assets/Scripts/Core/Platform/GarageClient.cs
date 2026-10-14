@@ -83,6 +83,18 @@ namespace OmniBot.VR.Core.Platform
             }, returnRepresentation: true));
         }
 
+        /// <summary>
+        /// Reads <c>robot_sessions</c> written by a sim launcher or cloud orchestrator.
+        /// A missing table comes back as an error; the session picker still accepts a manual IP.
+        /// </summary>
+        public void GetRobotSessions(Action<string, string> done)
+        {
+            if (!Ready(out var token, out var err)) { done?.Invoke(null, err); return; }
+            var url = $"{_restUrl}/robot_sessions?select=*";
+            StartCoroutine(Send(UnityWebRequest.kHttpVerbGET, url, token, null,
+                (ok, body, e) => done?.Invoke(ok ? body : null, ok ? null : e)));
+        }
+
         // ── Delete a robot (mirrors deleteUserRobot) ──────────────────────────
         public void DeleteUserRobot(string id, Action<bool, string> done)
         {

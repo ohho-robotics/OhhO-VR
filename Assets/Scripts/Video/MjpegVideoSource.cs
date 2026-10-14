@@ -41,9 +41,15 @@ namespace OmniBot.VR.Video
 
         public void Start(string robotIp, string topic)
         {
+            string encoded = Uri.EscapeUriString(topic ?? "");
+            StartUrl($"http://{robotIp}:{WebVideoServerPort}/stream?topic={encoded}");
+        }
+
+        /// <summary>Stream an absolute MJPEG URL from a session endpoint.</summary>
+        public void StartUrl(string url)
+        {
             Stop();
-            string encoded = Uri.EscapeUriString(topic);
-            string url = $"http://{robotIp}:{WebVideoServerPort}/stream?topic={encoded}";
+            if (string.IsNullOrEmpty(url) || _host == null) return;
             _coroutine = _host.StartCoroutine(StreamMjpeg(url));
         }
 

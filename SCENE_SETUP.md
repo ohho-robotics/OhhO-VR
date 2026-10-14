@@ -11,7 +11,7 @@ The app runs **one unified world-space screen** ("OhhO Screen", 1600×1000 at
 0.001 scale ≈ 1.6 m wide) floating 1.6 m in front of the user over
 passthrough. A `WorldSpaceUiPlacer` keeps it facing the user; the header bar
 (OhhO logo + ohho-robotics.com + Open Website button) is always visible, and
-the four pages route inside it:
+the pages route inside it:
 
 ```
 ┌──────────────── OhhO Screen (one canvas, faces the user) ───────────────┐
@@ -20,6 +20,7 @@ the four pages route inside it:
 │ Login page      → email OTP sign-in (Supabase, same account as the site) │
 │ Console page    → VR products from the manifest (today: OhhO Pilot)      │
 │ Garage page     → the user's robots (Supabase user_robots, shared w/web) │
+│ Session page    → Simulate (local / cloud / in-headset) or Drive real     │
 │ Teleop page     → connection + telemetry │ camera feed │ recording/export│
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -121,8 +122,11 @@ One persistent GameObject holding the platform services (each is a singleton):
    VR products (today **OhhO Pilot**).
 4. Open Pilot → the **garage** lists the robots from your OhhO account (pulled from
    Supabase `user_robots`). Empty? Add one on the website/app — it appears here.
-5. **Select a robot** → `OhhoVrApp` builds its `RobotProfile` from the catalog and
-   hands it to `TeleopController`. The teleop page opens.
+5. **Select a robot** → the session page asks **Simulate** or **Drive real**.
+   Simulate → Local desktop, Cloud, or In-headset. Drive real shows the safety
+   notice (and the deadman tutorial the first time) before an announced robot
+   or a manual IP. `OhhoVrApp` then builds the `RobotProfile` and hands it to
+   `TeleopController`. The teleop page opens with a blue **SIM** or orange **REAL** banner.
    - **Base:** left stick strafe (vx/vy), right stick X yaw, right grip turbo,
      both grips e-stop.
    - **Arm:** right-hand pose → IK → `/arm/joint_commands` @ 20 Hz; pinch →

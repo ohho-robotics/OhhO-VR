@@ -44,6 +44,54 @@ namespace OmniBot.VR.Control
         public float MaxLinVel;         // m/s
         public float MaxAngVel;         // rad/s
 
+        /// <summary>
+        /// Safety: a grip must be held to drive. Releasing it publishes zero velocity.
+        /// Defaults to true. The only opt-out is <see cref="DisableDeadmanForSimulation"/>,
+        /// and device player builds ignore that call. OHH-59 enforces this in the drive
+        /// loop; the session picker never turns it off for a real robot.
+        /// </summary>
+        public bool RequireDeadman
+        {
+            get => _requireDeadman;
+            set
+            {
+                if (!value && !DeadmanOptOutAllowed)
+                {
+                    _requireDeadman = true;
+                    return;
+                }
+                _requireDeadman = value;
+            }
+        }
+
+        private bool _requireDeadman = true;
+
+        /// <summary>
+        /// True in the editor (EditMode tests, play mode, Meta XR Simulator).
+        /// Quest player builds compile this to false so a profile cannot disable the deadman.
+        /// </summary>
+        public static bool DeadmanOptOutAllowed
+        {
+            get
+            {
+#if UNITY_EDITOR
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
+
+        /// <summary>
+        /// Turn the deadman off for an editor or simulator session. Explicit on purpose:
+        /// a new profile keeps the deadman required. No effect in a device player build.
+        /// The session picker does not call this for a real robot.
+        /// </summary>
+        public void DisableDeadmanForSimulation()
+        {
+            RequireDeadman = false;
+        }
+
         // ── Manipulator ───────────────────────────────────────────────────────
         public bool HasArm;
         public int ArmDof;
