@@ -19,6 +19,15 @@ namespace OmniBot.VR.Control
     /// </summary>
     public static class RobotProfileFactory
     {
+        /// <summary>Headset id for the OHH-243 ACT checkpoint. Matches the Python config.</summary>
+        public const string ActVrSimPickId = "act-vr-sim-pick";
+
+        /// <summary>Local checkpoint path passed to /policy/load and POST /load_model.</summary>
+        public const string ActVrSimPickCheckpoint = "checkpoints/act_vr_sim_pick/best";
+
+        public const string ActVrSimPickModels =
+            "[{\"id\":\"act-vr-sim-pick\",\"label\":\"ACT VR sim pick\",\"checkpoint\":\"checkpoints/act_vr_sim_pick/best\"}]";
+
         // ── SO-101 6-DOF arm — the OhhO reference arm (mirrors robot-config.ts) ──
         public static readonly JointSpec[] So101Joints =
         {
@@ -115,6 +124,8 @@ namespace OmniBot.VR.Control
                 IsLegged = isLegged,
                 IsDualArm = category == "humanoid",
                 IkLocation = IkLocation.Headset, // default: solve in Unity
+                PolicyModelsFallback = hasArm ? "act,smolvla,diffusion,openvla" : "",
+                ServeBaseUrl = "",
                 Topics = BuildTopics(spec.BaseDof, hasArm, category, jointStatesTopic),
                 HandWorkspaceRadius = HandWorkspaceRadius,
                 ArmBaseHeight = hasArm ? So101BaseHeight : 0f,
@@ -136,6 +147,15 @@ namespace OmniBot.VR.Control
                 Odom          = baseDof > 0 ? "/odom" : "",
                 Imu           = "/imu/data",
                 JointStates   = jointStates,
+                ArmCmdMode    = hasArm ? "/arm/cmd_mode" : "",
+                PolicyEnable  = hasArm ? "/policy/enable" : "",
+                PolicyTask    = hasArm ? "/policy/task" : "",
+                PolicyLoad    = hasArm ? "/policy/load" : "",
+                PolicyModels  = hasArm ? "/policy/models" : "",
+                PolicyCmdVel  = hasArm ? "/cmd_vel/vla" : "",
+                AiStatus      = "/ai/status",
+                Telemetry     = "/ohho/telemetry",
+                ControlModeActive = "/control_mode/active",
             };
             // Image topics by category (mirrors deriveSensors image list)
             if (category == "mobile-manipulator")
@@ -167,6 +187,7 @@ namespace OmniBot.VR.Control
                     p.Topics.ArmCommands = "/arm/joint_commands";
                     p.Topics.ArmEnable = "/arm/enable";
                     p.Topics.JointStates = "/arm/joint_states";
+                    p.PolicyModelsFallback = ActVrSimPickModels;
                     break;
                 case "so101-arm":
                     p.Joints = (JointSpec[])So101Joints.Clone();

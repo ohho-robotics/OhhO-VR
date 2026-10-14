@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using OmniBot.VR.Core;
 using OmniBot.VR.Input;
@@ -104,6 +105,13 @@ namespace OmniBot.VR.Control
             };
             _prevBothGrips = bothGrips;
 
+            // Tell a running policy about the same both-grips edge the drive
+            // uses for e-stop. Exceptions must not skip the drive tick.
+            if (input.BothGripsPressed)
+                Raise(EmergencyStopChanged, true);
+            else if (input.BothGripsReleased)
+                Raise(EmergencyStopChanged, false);
+
             // ── Drive ────────────────────────────────────────────────────────────
             if (_drive != null)
                 _drive.Tick(ref input, Link);
@@ -146,6 +154,7 @@ namespace OmniBot.VR.Control
             if (recorder != null) recorder.Configure(profile);
 
             Debug.Log($"[TeleopController] Teleop started — {profile.Name} ({profile.Drive}, arm {(profile.HasArm ? $"{profile.ArmDof}-DOF" : "none")}), IK={profile.IkLocation}.");
+            Raise(TeleopSessionStarted, profile);
         }
 
         /// <summary>Stop teleoperation: zero velocity, disarm arm, drop the schemes.</summary>
@@ -154,6 +163,8 @@ namespace OmniBot.VR.Control
             if (!_teleopActive && _drive == null && _manip == null) return;
             _drive?.Stop(Link);
             _manip?.Stop(Link);
+            // Hand a running policy back while this profile is still set.
+            Raise(TeleopSessionStopped);
             _drive = null;
             _manip = null;
             Profile = null;
@@ -162,8 +173,35 @@ namespace OmniBot.VR.Control
             _thumbsUpHoldTimer = 0f;
         }
 
+        private static void Raise(Action action)
+        {
+            try { action?.Invoke(); }
+            catch (Exception ex) { Debug.LogException(ex); }
+        }
+
+        private static void Raise<T>(Action<T> action, T arg)
+        {
+            try { action?.Invoke(arg); }
+            catch (Exception ex) { Debug.LogException(ex); }
+        }
+
         /// <summary>Whether a robot is currently being teleoperated.</summary>
         public bool IsTeleopActive => _teleopActive;
+
+        /// <summary>Same transport the drive and arm schemes publish on.</summary>
+        public IRobotLink RobotLink => Link;
+
+        /// <summary>
+        /// Both-grips e-stop edge. True when the existing deadman presses.
+        /// Drive and arm behaviour are unchanged; a policy must yield on true.
+        /// </summary>
+        public event Action<bool> EmergencyStopChanged;
+
+        /// <summary>Fired after a profile is applied and topics are advertised.</summary>
+        public event Action<RobotProfile> TeleopSessionStarted;
+
+        /// <summary>Fired after the schemes stop. A running policy must hand back first.</summary>
+        public event Action TeleopSessionStopped;
 
         // ── Input helpers ─────────────────────────────────────────────────────────
 

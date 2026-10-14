@@ -1,6 +1,7 @@
 using UnityEngine;
 using OmniBot.VR.Core.Platform;
 using OmniBot.VR.Control;
+using OmniBot.VR.Policy;
 using OmniBot.VR.UI;
 using OmniBot.VR.UI.Garage;
 
@@ -158,6 +159,12 @@ namespace OmniBot.VR.App
             LastRobotStore.Save(profile.RobotId, robot.DisplayName,
                 conn != null ? conn.CurrentIp : "192.168.1.101",
                 conn != null ? conn.CurrentPort : 9090);
+
+            var policyPanel = PolicyPanelController.FindOrCreate(teleopController);
+            string robotStatus = robot.UserRobot != null ? robot.UserRobot.Status : null;
+            policyPanel.PrepareSession(
+                teleopController,
+                PolicyPanelController.SessionKindForStatus(robotStatus));
 
             teleopController.StartTeleop(profile);
             ShowTeleop();
