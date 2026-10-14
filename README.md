@@ -307,6 +307,21 @@ The visionOS port is planned for a future release. Key design decisions:
 
 ---
 
+## Coordinated release (not yet tagged)
+
+Nothing in this section is a published release. Git tags, GitHub Releases, and the sim container tag below have not been created. `ProjectSettings/ProjectSettings.asset` on this commit (`4ebc555a7495ee7a2cd0f62cbe85fbc201ad1d4b`, `origin/main`) still has `bundleVersion: 1.0`.
+
+| Piece | Intended pin | On this commit? |
+|---|---|---|
+| OhhO-VR app | git tag `v1.0.0` | The Quest client is here. The tag is not yet tagged. |
+| `protocolVersion` | `1.0.0` | No. See the matrix. |
+| `ohho.telemetry.v1` | schema `1.0.0` | No. |
+| `RobotDescriptor` | `ohho.descriptor.v1` (`1.0.x`) | No. |
+| OmniBot VR profile | git tag `vr-profile-v1.0.0` | No. That tag is not yet tagged. |
+| Sim container | `ghcr.io/ohho-robotics/omnibot-sim:vr-1.0.0` | Placeholder. Not published. |
+
+Full table, branch SHAs, and the human tag commands: [docs/compatibility-matrix.md](docs/compatibility-matrix.md), [CHANGELOG.md](CHANGELOG.md), [docs/release-tags.md](docs/release-tags.md). `scripts/print-release-commands.sh` prints those commands and does not run them.
+
 ## Licence
 
 First-party code in this repository is [Apache License 2.0](LICENSE).
