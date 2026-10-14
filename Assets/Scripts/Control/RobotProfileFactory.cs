@@ -115,6 +115,8 @@ namespace OmniBot.VR.Control
                 IsLegged = isLegged,
                 IsDualArm = category == "humanoid",
                 IkLocation = IkLocation.Headset, // default: solve in Unity
+                PolicyModelsFallback = hasArm ? "act,smolvla,diffusion,openvla" : "",
+                ServeBaseUrl = "",
                 Topics = BuildTopics(spec.BaseDof, hasArm, category, jointStatesTopic),
                 HandWorkspaceRadius = HandWorkspaceRadius,
                 ArmBaseHeight = hasArm ? So101BaseHeight : 0f,
@@ -136,6 +138,15 @@ namespace OmniBot.VR.Control
                 Odom          = baseDof > 0 ? "/odom" : "",
                 Imu           = "/imu/data",
                 JointStates   = jointStates,
+                ArmCmdMode    = hasArm ? "/arm/cmd_mode" : "",
+                PolicyEnable  = hasArm ? "/policy/enable" : "",
+                PolicyTask    = hasArm ? "/policy/task" : "",
+                PolicyLoad    = hasArm ? "/policy/load" : "",
+                PolicyModels  = hasArm ? "/policy/models" : "",
+                PolicyCmdVel  = hasArm ? "/cmd_vel/vla" : "",
+                AiStatus      = "/ai/status",
+                Telemetry     = "/ohho/telemetry",
+                ControlModeActive = "/control_mode/active",
             };
             // Image topics by category (mirrors deriveSensors image list)
             if (category == "mobile-manipulator")
