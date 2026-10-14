@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ohho_headset_camera_permission_rationale">OhhO uses the headset camera to see the AprilTags on the robot and lock the robot in the room. Images stay on the headset. If you deny camera access, robot detection stays off.</string>
+    <string name="ohho_hand_tracking_permission_rationale">OhhO uses hand tracking so a hand pose can drive the robot arm. Hand poses stay on the headset. The base still drives from the controllers if hand tracking is unavailable.</string>
+    <string name="ohho_headset_camera_permission_denied">Headset camera permission was denied. Robot detection is off. Place the robot manually. Headset camera images are not used.</string>
+</resources>

@@ -61,6 +61,9 @@ namespace OmniBot.VR.Detection
         private bool _hasAnchorPose;
         private RigidTransform _pendingCorrection = RigidTransform.Identity;
         private bool _hasPendingCorrection;
+        private readonly ManualPlacementBaseline _manual = new ManualPlacementBaseline();
+        private Pose _manualPose;
+        private bool _hasManualPose;
         private System.Threading.Thread _worker;
         private volatile bool _run;
         private readonly System.Threading.ManualResetEventSlim _processed = new System.Threading.ManualResetEventSlim(false);
@@ -69,6 +72,23 @@ namespace OmniBot.VR.Detection
         public bool PermissionDenied { get; private set; }
         public string DisabledReason { get; private set; } = HeadsetCameraGate.EditorReason;
         public string PermissionRationale => HeadsetCameraGate.Rationale;
+
+        /// <summary>
+        /// True after a headset camera denial. Camera detection stays off and
+        /// <see cref="TryGetManualPlacement"/> is the pose source.
+        /// </summary>
+        public bool UsingManualPlacement => PermissionDenied;
+
+        /// <summary>User-visible status. On denial this is the manual-placement message.</summary>
+        public string StatusMessage => PermissionDenied ? HeadsetCameraGate.DeniedReason : DisabledReason;
+
+        public ManualPlacementBaseline ManualPlacement => _manual;
+
+        // TODO(OHH-222): show StatusMessage on Assets/Scripts/UI/TeleopHudController.cs
+        // and Assets/Scripts/Telemetry/TelemetryHudComposer.cs. Those HUD files are
+        // owned by another job; this service only exposes the string.
+        // TODO(OHH-238): Assets/Scripts/Video/DetectionOverlay.cs should read
+        // TryGetManualPlacement when camera detection is off.
         public RobotDetectionSnapshot Snapshot { get; private set; } = RobotDetectionSnapshot.Inactive(0);
         public ISessionOriginAnchor SessionOrigin => _anchor;
         public int LastDetectorThreadId { get; private set; }
@@ -122,6 +142,7 @@ namespace OmniBot.VR.Detection
             if (!granted)
             {
                 Debug.Log("[RobotDetection] " + HeadsetCameraGate.Rationale);
+                Debug.Log("[RobotDetection] " + StatusMessage);
                 _waitingForPermission = true;
                 HeadsetCameraGate.RequestAccess();
                 return;
@@ -201,6 +222,11 @@ namespace OmniBot.VR.Detection
                     : HeadsetCameraGate.EditorReason;
                 StopWorker();
                 DetachOdom();
+                lock (_sync)
+                {
+                    _hasFrame = false;
+                }
+
                 Snapshot = RobotDetectionSnapshot.Inactive(Snapshot.TimestampSeconds);
                 return;
             }
@@ -220,8 +246,39 @@ namespace OmniBot.VR.Detection
             ApplyPermission(headsetBuild: true, granted: false);
         }
 
+        /// <summary>
+        /// Operator-placed robot pose used while camera detection is off.
+        /// Does not start the camera worker or subscribe to odometry.
+        /// </summary>
+        public void SetManualPlacement(Pose worldPose)
+        {
+            _manualPose = worldPose;
+            _hasManualPose = true;
+            _manual.SetPlaced(new AprilTagDetection(
+                0,
+                "manual",
+                worldPose.position,
+                worldPose.rotation,
+                0,
+                1f));
+        }
+
+        /// <summary>
+        /// The manual pose, only while camera permission is denied and a pose was set.
+        /// </summary>
+        public bool TryGetManualPlacement(out Pose pose)
+        {
+            pose = _manualPose;
+            return PermissionDenied && _hasManualPose && _manual.HasPlacement;
+        }
+
         public void SubmitCapturedFrame(PassthroughFrame frame)
         {
+            if (!FeatureEnabled)
+            {
+                return;
+            }
+
             var camera = RigidTransform.FromUnityPose(frame.CameraPose);
             lock (_sync)
             {
