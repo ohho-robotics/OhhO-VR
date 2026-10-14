@@ -1,0 +1,50 @@
+{
+  "v": "1.0.0",
+  "id": "base-only",
+  "model": "Base",
+  "drive": {
+    "kind": "differential",
+    "holonomic": false,
+    "caps": {
+      "vx_mps": 0.2,
+      "vy_mps": 0,
+      "wz_rad_s": 1.0
+    }
+  },
+  "arms": [],
+  "topics": {
+    "cmd": "/cmd_vel",
+    "state": "/odom",
+    "estop": "/emergency_stop",
+    "heartbeat": "/ohho/heartbeat",
+    "telemetry": "/ohho/telemetry",
+    "images": ["/camera/front/image_raw"]
+  },
+  "cameras": [
+    {
+      "name": "front",
+      "kind": "rgb",
+      "frame": "front_camera_link",
+      "topic": "/camera/front/image_raw"
+    }
+  ],
+  "urdf_url": "package://example/urdf/base.urdf",
+  "apriltags": [],
+  "telemetry": {
+    "schema_id": "ohho.telemetry.v1",
+    "robot_id": "base-only",
+    "kind": "sim",
+    "fields": ["base"]
+  },
+  "safety": {
+    "hard": {
+      "max_vx_mps": 0.2,
+      "max_vy_mps": 0,
+      "max_wz_rad_s": 1.0,
+      "max_accel_x_mps2": 0.5,
+      "max_accel_y_mps2": 0.5,
+      "max_accel_wz_rad_s2": 2.0,
+      "max_joint_step_rad": 0.15
+    }
+  }
+}

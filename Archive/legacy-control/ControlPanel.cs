@@ -109,7 +109,7 @@ namespace OmniBot.VR.UI
                 Debug.LogWarning("[ControlPanel] Not connected.");
                 return;
             }
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CONTROL_MODE, new StringMsg(mode));
+            ROSBridgeClient.Instance.Publish("/control_mode", new StringMsg(mode));
             Debug.Log($"[ControlPanel] control_mode → {mode}");
         }
 
@@ -132,7 +132,7 @@ namespace OmniBot.VR.UI
         private void SendMissionCommand(string command)
         {
             if (!ROSBridgeClient.Instance.IsConnected) return;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_MISSION_COMMAND, new StringMsg(command));
+            ROSBridgeClient.Instance.Publish("/mission/command", new StringMsg(command));
             Debug.Log($"[ControlPanel] mission_command → {command}");
         }
 
@@ -150,7 +150,7 @@ namespace OmniBot.VR.UI
             string cmd = aiCommandInput.text.Trim();
             if (string.IsNullOrEmpty(cmd)) return;
             if (!ROSBridgeClient.Instance.IsConnected) return;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_AI_COMMAND, new StringMsg(cmd));
+            ROSBridgeClient.Instance.Publish("/ai/command", new StringMsg(cmd));
             aiCommandInput.text = "";
             Debug.Log($"[ControlPanel] ai/command → {cmd}");
         }
@@ -159,7 +159,7 @@ namespace OmniBot.VR.UI
         {
             if (!ROSBridgeClient.Instance.IsConnected) return;
             _emergencyStopHeld = true;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(true));
+            ROSBridgeClient.Instance.Publish("/emergency_stop", new BoolMsg(true));
             Debug.LogWarning("[ControlPanel] EMERGENCY STOP pressed.");
         }
 
@@ -167,7 +167,7 @@ namespace OmniBot.VR.UI
         {
             if (!ROSBridgeClient.Instance.IsConnected || !_emergencyStopHeld) return;
             _emergencyStopHeld = false;
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, new BoolMsg(false));
+            ROSBridgeClient.Instance.Publish("/emergency_stop", new BoolMsg(false));
             Debug.Log("[ControlPanel] Emergency stop released.");
         }
     }

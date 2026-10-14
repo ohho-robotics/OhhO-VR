@@ -78,21 +78,21 @@ namespace OmniBot.VR.UI
         {
             // Subscribe to telemetry topics
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ODOM, "nav_msgs/Odometry", OnOdom);
+                "/odom", "nav_msgs/Odometry", OnOdom);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_IMU, "sensor_msgs/Imu", OnImu);
+                "/imu/data", "sensor_msgs/Imu", OnImu);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ARM_STATES, "sensor_msgs/JointState", OnArmState);
+                "/arm/joint_states", "sensor_msgs/JointState", OnArmState);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_CONTROL_MODE_ACTIVE, "std_msgs/String", OnControlMode);
+                "/control_mode/active", "std_msgs/String", OnControlMode);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ARM_MODE_ACTIVE, "std_msgs/String", OnArmMode);
+                "/arm/cmd_mode/active", "std_msgs/String", OnArmMode);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_MISSION_STATUS, "std_msgs/String", OnMissionStatus);
+                "/mission/status", "std_msgs/String", OnMissionStatus);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_AI_STATUS, "std_msgs/String", OnAiStatus);
+                "/ai/status", "std_msgs/String", OnAiStatus);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_AI_RESPONSE_NEEDED, "std_msgs/String", OnAiResponseNeeded);
+                "/ai/response_needed", "std_msgs/String", OnAiResponseNeeded);
 
             // Configure arm sliders to joint ranges
             if (armJointSliders != null)
@@ -117,14 +117,14 @@ namespace OmniBot.VR.UI
             // Unsubscribe to avoid lingering callbacks
             if (ROSBridgeClient.Instance != null)
             {
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_ODOM);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_IMU);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_ARM_STATES);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_CONTROL_MODE_ACTIVE);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_ARM_MODE_ACTIVE);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_MISSION_STATUS);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_AI_STATUS);
-                ROSBridgeClient.Instance.Unsubscribe(RobotConfig.TOPIC_AI_RESPONSE_NEEDED);
+                ROSBridgeClient.Instance.Unsubscribe("/odom");
+                ROSBridgeClient.Instance.Unsubscribe("/imu/data");
+                ROSBridgeClient.Instance.Unsubscribe("/arm/joint_states");
+                ROSBridgeClient.Instance.Unsubscribe("/control_mode/active");
+                ROSBridgeClient.Instance.Unsubscribe("/arm/cmd_mode/active");
+                ROSBridgeClient.Instance.Unsubscribe("/mission/status");
+                ROSBridgeClient.Instance.Unsubscribe("/ai/status");
+                ROSBridgeClient.Instance.Unsubscribe("/ai/response_needed");
             }
         }
 

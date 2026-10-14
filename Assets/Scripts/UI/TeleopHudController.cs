@@ -3,7 +3,10 @@ using UnityEngine;
 using UnityEngine.UI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
 using OmniBot.VR.Core;
+using OmniBot.VR.Control;
 using OmniBot.VR.Recording;
 
 namespace OmniBot.VR.UI
@@ -62,7 +65,12 @@ namespace OmniBot.VR.UI
 
         // ── State ─────────────────────────────────────────────────────────────
         private App.OhhoVrApp _app;
-        private Control.TeleopController _teleop;
+        private TeleopController _teleop;
+        private readonly List<KeyValuePair<string, Action<string>>> _telemetrySubs =
+            new List<KeyValuePair<string, Action<string>>>();
+        private Action<string> _onOdom;
+        private Action<string> _onArm;
+        private Action<string> _onMode;
         private OdometryMsg _latestOdom;
         private JointStateMsg _latestArm;
         private string _controlMode = "—";
@@ -95,7 +103,11 @@ namespace OmniBot.VR.UI
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged += OnConnectionState;
+            if (_teleop != null) _teleop.TeleopStarted += OnTeleopStarted;
 
+            _onOdom = OnOdomMessage;
+            _onArm = OnArmMessage;
+            _onMode = OnModeMessage;
             SubscribeTelemetry();
 
             // Pre-fill the connection fields from the saved preferences.
@@ -123,6 +135,14 @@ namespace OmniBot.VR.UI
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged -= OnConnectionState;
+            if (_teleop != null) _teleop.TeleopStarted -= OnTeleopStarted;
+            UnsubscribeTelemetry();
+        }
+
+        private void OnTeleopStarted(RobotProfile profile)
+        {
+            SubscribeTelemetry();
+            RefreshRobotLabel();
         }
 
         private void Update()
@@ -173,29 +193,61 @@ namespace OmniBot.VR.UI
         private void SubscribeTelemetry()
         {
             var ros = ROSBridgeClient.Instance;
-            if (ros == null) return;
+            var topics = _teleop != null ? _teleop.Profile?.Topics : null;
+            if (ros == null || topics == null) return;
 
-            ros.Subscribe(RobotConfig.TOPIC_ODOM, "nav_msgs/Odometry", json =>
-            {
-                try { _latestOdom = JsonConvert.DeserializeObject<OdometryMsg>(JObject.Parse(json)["msg"]?.ToString() ?? json); }
-                catch { /* malformed frame — keep last good */ }
-            });
+            UnsubscribeTelemetry();
+            SubscribeOne(ros, topics.Odom, "nav_msgs/Odometry", _onOdom);
+            SubscribeOne(ros, topics.JointStates, "sensor_msgs/JointState", _onArm);
+            SubscribeOne(ros, topics.ControlModeActive, "std_msgs/String", _onMode);
+        }
 
-            ros.Subscribe(RobotConfig.TOPIC_ARM_STATES, "sensor_msgs/JointState", json =>
-            {
-                try { _latestArm = JsonConvert.DeserializeObject<JointStateMsg>(JObject.Parse(json)["msg"]?.ToString() ?? json); }
-                catch { }
-            });
+        private void SubscribeOne(ROSBridgeClient ros, string topic, string type, Action<string> callback)
+        {
+            if (ros == null || callback == null || string.IsNullOrEmpty(topic)) return;
+            ros.Subscribe(topic, type, callback);
+            _telemetrySubs.Add(new KeyValuePair<string, Action<string>>(topic, callback));
+        }
 
-            ros.Subscribe(RobotConfig.TOPIC_CONTROL_MODE_ACTIVE, "std_msgs/String", json =>
+        private void UnsubscribeTelemetry()
+        {
+            var ros = ROSBridgeClient.Instance;
+            if (ros != null)
             {
-                try
-                {
-                    var token = JObject.Parse(json)["msg"]?["data"];
-                    if (token != null) _controlMode = token.ToString();
-                }
-                catch { }
-            });
+                foreach (var sub in _telemetrySubs)
+                    ros.Unsubscribe(sub.Key, sub.Value);
+            }
+
+            _telemetrySubs.Clear();
+        }
+
+        private void OnOdomMessage(string json)
+        {
+            try { _latestOdom = JsonConvert.DeserializeObject<OdometryMsg>(MessageBody(json)); }
+            catch { /* malformed frame — keep last good */ }
+        }
+
+        private void OnArmMessage(string json)
+        {
+            try { _latestArm = JsonConvert.DeserializeObject<JointStateMsg>(MessageBody(json)); }
+            catch { }
+        }
+
+        private void OnModeMessage(string json)
+        {
+            try
+            {
+                var token = JObject.Parse(MessageBody(json))?["data"] ?? JObject.Parse(json)["msg"]?["data"];
+                if (token != null) _controlMode = token.ToString();
+            }
+            catch { }
+        }
+
+        private static string MessageBody(string json)
+        {
+            var root = JObject.Parse(json);
+            var msg = root["msg"];
+            return msg != null ? msg.ToString() : json;
         }
 
         private void RefreshTelemetryUi()
@@ -215,7 +267,10 @@ namespace OmniBot.VR.UI
                 if (_latestArm?.position != null && _latestArm.position.Length > 0)
                 {
                     var sb = new System.Text.StringBuilder();
-                    int n = Mathf.Min(_latestArm.position.Length, 6);
+                    int limit = _teleop != null && _teleop.Profile != null && _teleop.Profile.ArmDof > 0
+                        ? _teleop.Profile.ArmDof
+                        : _latestArm.position.Length;
+                    int n = Mathf.Min(_latestArm.position.Length, limit);
                     for (int i = 0; i < n; i++)
                         sb.Append(_latestArm.position[i].ToString("F2")).Append(i < n - 1 ? "  " : "");
                     armText.text = sb.ToString();

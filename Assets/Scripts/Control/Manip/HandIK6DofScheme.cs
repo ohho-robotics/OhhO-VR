@@ -117,17 +117,29 @@ namespace OmniBot.VR.Control.Manip
             // 2. Solve IK (solver works in world space anchored at the arm base)
             float[] newAngles = _ikSolver.SolveIK(absoluteTarget, rightHand.Rotation, _currentAngles);
 
-            // 3. Clamp to the profile's joint limits (profile is the source of truth)
+            // 3. Clamp to the profile's joint limits and the descriptor step cap.
+            float step = SafetyCaps.JointStepLimit(_profile);
             for (int i = 0; i < newAngles.Length && i < _jointMin.Length; i++)
-                newAngles[i] = Mathf.Clamp(newAngles[i], _jointMin[i], _jointMax[i]);
+            {
+                float previous = _currentAngles != null && i < _currentAngles.Length
+                    ? _currentAngles[i] : newAngles[i];
+                newAngles[i] = SafetyCaps.ClampJoint(previous, newAngles[i], _jointMin[i], _jointMax[i], step);
+            }
 
-            // 4. Gripper from pinch (last joint)
+            // 4. Gripper from pinch (last joint), still inside the same limits and step.
             if (newAngles.Length > 0 && _jointMax.Length > 0)
-                newAngles[newAngles.Length - 1] = PinchToGripper(rightHand.PinchStrength);
+            {
+                int last = newAngles.Length - 1;
+                float grip = PinchToGripper(rightHand.PinchStrength);
+                float previous = _currentAngles != null && last < _currentAngles.Length
+                    ? _currentAngles[last] : grip;
+                newAngles[last] = SafetyCaps.ClampJoint(previous, grip, _jointMin[last], _jointMax[last], step);
+            }
 
             _currentAngles = newAngles;
 
             // 5. Publish JointState
+            if (string.IsNullOrEmpty(_profile.Topics.ArmCommands)) return false;
             var msg = new JointStateMsg((string[])_jointNames.Clone(), newAngles);
             link.Publish(_profile.Topics.ArmCommands, msg);
             return true;

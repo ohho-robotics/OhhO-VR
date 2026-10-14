@@ -157,14 +157,19 @@ namespace OmniBot.VR.Core
         {
             lock (_subscribersLock)
             {
-                if (!_subscribers.ContainsKey(topic))
+                if (!_subscribers.TryGetValue(topic, out var callbacks))
                 {
-                    _subscribers[topic] = new List<Action<string>>();
-                    // Send subscribe op to ROSBridge
+                    callbacks = new List<Action<string>>();
+                    _subscribers[topic] = callbacks;
                     var subMsg = new ROSSubscribeMessage(topic, type);
                     SendJson(JsonConvert.SerializeObject(subMsg));
                 }
-                _subscribers[topic].Add(callback);
+                else if (callbacks.Contains(callback))
+                {
+                    return;
+                }
+
+                callbacks.Add(callback);
             }
         }
 
@@ -177,6 +182,38 @@ namespace OmniBot.VR.Core
             }
             var unsubMsg = new ROSUnsubscribeMessage(topic);
             SendJson(JsonConvert.SerializeObject(unsubMsg));
+        }
+
+        /// <summary>
+        /// Drops one callback. The ROS unsubscribe is sent only when that was
+        /// the last listener, so a HUD refresh cannot tear down the recorder.
+        /// </summary>
+        public void Unsubscribe(string topic, Action<string> callback)
+        {
+            bool send;
+            lock (_subscribersLock)
+            {
+                if (!_subscribers.TryGetValue(topic, out var callbacks)) return;
+                callbacks.RemoveAll(existing => existing != null && existing.Equals(callback));
+                send = callbacks.Count == 0;
+                if (send) _subscribers.Remove(topic);
+            }
+
+            if (send)
+                SendJson(JsonConvert.SerializeObject(new ROSUnsubscribeMessage(topic)));
+        }
+
+        /// <summary>Unsubscribes every topic this client is listening to.</summary>
+        public void UnsubscribeAll()
+        {
+            List<string> topics;
+            lock (_subscribersLock)
+            {
+                topics = new List<string>(_subscribers.Keys);
+            }
+
+            foreach (var topic in topics)
+                Unsubscribe(topic);
         }
 
         // ── Private helpers ──────────────────────────────────────────────────

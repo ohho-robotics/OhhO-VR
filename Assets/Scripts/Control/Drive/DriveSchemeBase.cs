@@ -34,6 +34,7 @@ namespace OmniBot.VR.Control.Drive
         protected float NoInputTimer;
         protected float NoInputModeTimer;
         protected bool InTeleopMode;
+        private float _prevVx, _prevVy, _prevVz, _prevWz;
 
         public bool IsConfigured => Profile != null;
         public abstract string HudHint { get; }
@@ -59,6 +60,7 @@ namespace OmniBot.VR.Control.Drive
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
             InTeleopMode = false;
+            _prevVx = _prevVy = _prevVz = _prevWz = 0f;
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
@@ -82,6 +84,7 @@ namespace OmniBot.VR.Control.Drive
             // ── Scheme-specific velocity ───────────────────────────────────────
             bool hasInput;
             TwistMsg twist = ComputeVelocity(lx, ly, rx, ry, speedMult, out hasInput);
+            SafetyCaps.LimitTwist(twist, Profile, ref _prevVx, ref _prevVy, ref _prevVz, ref _prevWz, input.DeltaTime);
 
             // ── Control-mode management ────────────────────────────────────────
             UpdateControlMode(hasInput, input.DeltaTime, link);
@@ -92,6 +95,7 @@ namespace OmniBot.VR.Control.Drive
             PublishTimer -= PublishInterval;
 
             bool shouldPublish = hasInput || NoInputTimer < ZeroStopDelay;
+            if (string.IsNullOrEmpty(Profile.Topics.CmdVel)) return;
             if (shouldPublish)
             {
                 link.Publish(Profile.Topics.CmdVel, twist);
@@ -99,7 +103,7 @@ namespace OmniBot.VR.Control.Drive
             }
             else if (IsPublishing)
             {
-                link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                PublishZero(link);
                 IsPublishing = false;
             }
         }
@@ -109,11 +113,12 @@ namespace OmniBot.VR.Control.Drive
             if (!IsConfigured || Profile == null) return;
             if (link != null && link.IsConnected)
             {
-                link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                PublishZero(link);
                 if (InTeleopMode) PublishControlMode(IdleMode, link);
             }
             InTeleopMode = false;
             IsPublishing = false;
+            _prevVx = _prevVy = _prevVz = _prevWz = 0f;
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
         }
@@ -137,7 +142,10 @@ namespace OmniBot.VR.Control.Drive
             if (input.BothGripsPressed)
             {
                 EmergencyStopActive = true;
-                link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
+                PublishZero(link);
+                if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
+                PublishZero(link);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
                 Debug.Log($"[{GetType().Name}] Emergency stop ACTIVATED.");
@@ -145,7 +153,8 @@ namespace OmniBot.VR.Control.Drive
             else if (input.BothGripsReleased && EmergencyStopActive)
             {
                 EmergencyStopActive = false;
-                link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
+                if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
                 Debug.Log($"[{GetType().Name}] Emergency stop RELEASED.");
@@ -178,7 +187,18 @@ namespace OmniBot.VR.Control.Drive
         }
 
         protected void PublishControlMode(string mode, IRobotLink link)
-            => link.Publish(Profile.Topics.ControlMode, new StringMsg(mode));
+        {
+            if (link == null || string.IsNullOrEmpty(Profile?.Topics?.ControlMode) || string.IsNullOrEmpty(mode))
+                return;
+            link.Publish(Profile.Topics.ControlMode, new StringMsg(mode));
+        }
+
+        private void PublishZero(IRobotLink link)
+        {
+            if (link == null || string.IsNullOrEmpty(Profile?.Topics?.CmdVel)) return;
+            link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+            _prevVx = _prevVy = _prevVz = _prevWz = 0f;
+        }
 
         protected static float ApplyDeadZone(float value)
         {

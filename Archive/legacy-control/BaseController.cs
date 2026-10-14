@@ -71,7 +71,7 @@ namespace OmniBot.VR.Input
                 // Rising edge: activate emergency stop
                 _emergencyStopActive = true;
                 var stopMsg = new BoolMsg(true);
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
+                ROSBridgeClient.Instance.Publish("/emergency_stop", stopMsg);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
                 Debug.Log("[BaseController] Emergency stop ACTIVATED.");
@@ -81,7 +81,7 @@ namespace OmniBot.VR.Input
                 // Falling edge: release emergency stop
                 _emergencyStopActive = false;
                 var stopMsg = new BoolMsg(false);
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
+                ROSBridgeClient.Instance.Publish("/emergency_stop", stopMsg);
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
                 Debug.Log("[BaseController] Emergency stop RELEASED.");
@@ -145,7 +145,7 @@ namespace OmniBot.VR.Input
                 var twist = new TwistMsg(
                     new Vector3Msg(vx, vy, 0f),
                     new Vector3Msg(0f, 0f, omega));
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, twist);
+                ROSBridgeClient.Instance.Publish("/cmd_vel/teleop", twist);
                 _isPublishing = true;
             }
             else if (_isPublishing)
@@ -154,7 +154,7 @@ namespace OmniBot.VR.Input
                 var zeroTwist = new TwistMsg(
                     new Vector3Msg(0f, 0f, 0f),
                     new Vector3Msg(0f, 0f, 0f));
-                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, zeroTwist);
+                ROSBridgeClient.Instance.Publish("/cmd_vel/teleop", zeroTwist);
                 _isPublishing = false;
             }
         }
@@ -175,7 +175,7 @@ namespace OmniBot.VR.Input
         private static void PublishControlMode(string mode)
         {
             var msg = new StringMsg(mode);
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CONTROL_MODE, msg);
+            ROSBridgeClient.Instance.Publish("/control_mode", msg);
             Debug.Log($"[BaseController] control_mode → {mode}");
         }
     }
