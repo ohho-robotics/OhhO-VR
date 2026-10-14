@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (60 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (93 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -124,6 +124,8 @@ unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmo
 
 Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view expects MJPEG from `web_video_server` on port `8080`. Those processes live on the robot PC. This repo does not ship them.
 
+A **Simulate** session opens the chase camera (`/sim/chase_cam/image_raw`) on a curved world-space screen. A strip switches chase, front, wrist, and BEV, and the wrist camera stays in a picture-in-picture until it is the main view. Drag the screen and resize it with the handle; the pose and size are remembered. JPEG decode runs off the main thread, display is capped at 30 fps, and the overlay shows fps and frame age. The stream URL asks `web_video_server` for `quality` and `width` (main 80 / 960, wrist inset 60 / 320). A real session keeps the profile camera order on the flat panel and still decodes off the main thread.
+
 ---
 
 ## 6. Controls Reference
@@ -138,7 +140,7 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 | Right grip (hold) | Turbo mode (2× speed, clamped to 0.2 m/s) |
 | **Both grips simultaneously** | **Emergency stop** (held = stop, release = clear) |
 | Left controller B | Hide / show the OhhO Screen |
-| Right thumbstick press | Cycle camera feed |
+| Right thumbstick press | Cycle camera (a sim session also has a Chase / Front / Wrist / BEV strip) |
 
 ### Hand Tracking Arm Control
 
@@ -290,7 +292,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── Session/SessionPickerPanel.cs # Simulate / Drive real, then a target
 │   │   │   ├── TeleopHudController.cs # connection+telemetry+camera+recording+export
 │   │   │   └── ...
-│   │   ├── Video/              # MJPEG camera feed; WebRTC source is roadmap
+│   │   ├── Video/              # MJPEG sim screen (curved chase cam, off-thread decode); WebRTC source is roadmap
 │   │   └── Recording/          # EpisodeManager, ProfileDrivenRecorder
 │   └── Editor/
 │       └── OhhoUnifiedAppBuilder.cs  # OmniBot → Rebuild Unified OhhO Screen

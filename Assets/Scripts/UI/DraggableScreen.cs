@@ -9,6 +9,12 @@ namespace OmniBot.VR.UI
     /// </summary>
     public class DraggableScreen : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
     {
+        /// <summary>
+        /// Snap the panel up to headset height once tracking starts.
+        /// The sim screen turns this off so a remembered pose stays put.
+        /// </summary>
+        public bool snapHeightToHead = true;
+
         private Transform _targetTransform;
         private Vector3 _offset;
         private Camera _mainCamera;
@@ -23,6 +29,7 @@ namespace OmniBot.VR.UI
 
         private System.Collections.IEnumerator Start()
         {
+            if (!snapHeightToHead) yield break;
             if (_mainCamera == null) _mainCamera = Camera.main;
             
             // Wait until the VR camera is actually positioned above the floor
