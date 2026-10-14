@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 using NUnit.Framework;
 using OmniBot.VR.AprilTagSpike;
@@ -378,6 +379,51 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
+        public void PermissionDenied_UsesManualPlacement_AndDoesNotReadCameraFrames()
+        {
+            var link = new FakeRobotLink();
+            var anchor = new MemorySessionOriginAnchor();
+            var frames = new CountingFrameSource();
+            var profile = new RobotProfile
+            {
+                Topics = new RobotTopics { Odom = "/ohh224/odom_delta" },
+            };
+            using (var host = new ServiceHost())
+            {
+                host.Service.SetSources(frames, new ScriptedDetector(), anchor);
+                host.Service.NotifyPermissionDenied();
+                host.Service.UseProfile(profile, link);
+
+                Assert.IsFalse(host.Service.FeatureEnabled);
+                Assert.IsTrue(host.Service.PermissionDenied);
+                Assert.IsTrue(host.Service.UsingManualPlacement);
+                StringAssert.Contains("denied", host.Service.StatusMessage.ToLowerInvariant());
+                StringAssert.Contains("manual", host.Service.StatusMessage.ToLowerInvariant());
+                StringAssert.Contains("not used", host.Service.StatusMessage.ToLowerInvariant());
+                Assert.IsFalse(host.Service.TryGetManualPlacement(out _));
+
+                var placed = new Pose(new Vector3(1.25f, 0.1f, 0.4f), Quaternion.Euler(0f, 30f, 0f));
+                host.Service.SetManualPlacement(placed);
+                Assert.IsTrue(host.Service.ManualPlacement.HasPlacement);
+                Assert.IsTrue(host.Service.TryGetManualPlacement(out var got));
+                Assert.AreEqual(1.25f, got.position.x, 1e-4f);
+                Assert.AreEqual(0.4f, got.position.z, 1e-4f);
+
+                host.Service.SubmitCapturedFrame(FrameAt(CameraPose(), 1));
+                InvokeUpdate(host.Service);
+                var snap = host.Service.ProcessSample(FrameAt(CameraPose(), 1), 1);
+                Assert.AreEqual(RobotTrackState.Searching, snap.State);
+                Assert.IsFalse(snap.HasPose);
+                Assert.IsFalse(anchor.IsEstablished);
+                Assert.AreEqual(0, link.SubscribeCalls);
+                Assert.IsFalse(host.Service.StartWorker());
+                Assert.AreEqual(0, frames.Reads);
+                Assert.IsTrue(host.Service.TryGetManualPlacement(out got));
+                Assert.AreEqual(1.25f, got.position.x, 1e-4f);
+            }
+        }
+
+        [Test]
         public void EditorSdkGrant_IsNotTreatedAsHeadsetPermission()
         {
             Assert.IsTrue(OVRPermissionsRequester.IsPermissionGranted(
@@ -587,6 +633,29 @@ namespace OmniBot.VR.Tests
             }
 
             return "";
+        }
+
+        private static void InvokeUpdate(RobotDetectionService service)
+        {
+            var update = typeof(RobotDetectionService).GetMethod(
+                "Update",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.IsNotNull(update);
+            update.Invoke(service, null);
+        }
+
+        private sealed class CountingFrameSource : IPassthroughFrameSource
+        {
+            public int Reads;
+            public bool IsAvailable => true;
+            public string UnavailableReason => "";
+
+            public bool TryGetLatest(out PassthroughFrame frame)
+            {
+                Reads++;
+                frame = default;
+                return false;
+            }
         }
 
         private sealed class ServiceHost : IDisposable
