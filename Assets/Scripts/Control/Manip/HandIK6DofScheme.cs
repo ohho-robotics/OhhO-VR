@@ -11,8 +11,8 @@ namespace OmniBot.VR.Control.Manip
     /// <c>sensor_msgs/JointState</c> to <c>profile.Topics.ArmCommands</c> at 20 Hz.
     /// Pinch strength drives the gripper joint.
     ///
-    /// Logic extracted from the legacy
-    /// <c>Input/HandTrackingArmController.cs</c>; the only change is joint names,
+    /// Logic extracted from the archived HandTrackingArmController
+    /// (Archive/legacy-control); the only change is joint names,
     /// limits, link lengths and topics now come from the
     /// <see cref="RobotProfile"/> instead of <c>RobotConfig</c> constants. The IK
     /// solver itself (<see cref="ArmIKSolver"/>) is reused unchanged — it is

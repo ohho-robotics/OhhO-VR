@@ -51,7 +51,7 @@ namespace OmniBot.VR.Editor
             var catalog = appRoot.AddComponent<OhhoCatalog>();
             var connMgr = appRoot.AddComponent<ConnectionManager>();
 
-            // Controllers
+            // Live teleop only. Do not attach archived publishers from Archive/legacy-control.
             var teleopController = appRoot.AddComponent<TeleopController>();
 
             // 4. Create World Space UI Canvas Root
