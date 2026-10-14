@@ -56,6 +56,12 @@ namespace OmniBot.VR.Control
         /// <summary>True when speed and topics came from a RobotDescriptor. Those speeds stay inside the OmniBot ceilings.</summary>
         public bool CapsFromDescriptor;
 
+        /// <summary>
+        /// Blocks named by descriptor <c>telemetry.fields</c>. Null on the catalog
+        /// path, where the HUD falls back to <see cref="BaseDof"/> and <see cref="HasArm"/>.
+        /// </summary>
+        public string[] TelemetryFields;
+
         // ── Manipulator ───────────────────────────────────────────────────────
         public bool HasArm;
         public int ArmDof;

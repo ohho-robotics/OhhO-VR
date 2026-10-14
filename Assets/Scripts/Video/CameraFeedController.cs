@@ -67,10 +67,18 @@ namespace OmniBot.VR.Video
         /// <see cref="OmniBot.VR.Control.TeleopController"/> (or OhhoVrApp) when
         /// teleop starts.
         /// </summary>
+        /// <summary>Image topics from the profile. Empty when the descriptor lists none.</summary>
+        public static List<string> TopicsFor(RobotProfile profile)
+        {
+            if (profile?.Topics?.Images == null || profile.Topics.Images.Count == 0)
+                return new List<string>();
+            return profile.Topics.Images;
+        }
+
         public void Configure(RobotProfile profile)
         {
             _profile = profile;
-            _cameras = profile?.Topics?.Images ?? new List<string>();
+            _cameras = TopicsFor(profile);
             _currentIndex = 0;
             StartCurrentCamera();
         }

@@ -116,9 +116,17 @@ namespace OmniBot.VR.Control
 
             var spec = DriveSpecs.Get(drive);
             bool hasArm = joints.Length > 0;
-            var topics = TopicsFromDescriptor(descriptor, fixedBase);
+            // Arm-only: fixed base and every drive cap at zero. topics.cmd is the
+            // arm command and topics.state is joint state. A fixed-base document
+            // that still advertises drive caps keeps those topics off the arm.
+            bool armOnly = fixedBase
+                && caps.VxMps <= 0
+                && caps.VyMps <= 0
+                && caps.WzRadS <= 0
+                && hasArm;
+            var topics = TopicsFromDescriptor(descriptor, fixedBase, armOnly);
             if (sameRobot && catalogFallback.Topics != null)
-                CopyCatalogOnlyTopics(topics, catalogFallback.Topics);
+                CopyCatalogOnlyTopics(topics, catalogFallback.Topics, armOnly);
 
             float[] linkLengths = null;
             float armBase = 0f;
@@ -184,6 +192,7 @@ namespace OmniBot.VR.Control
                 ArmLinkLengths = linkLengths,
                 CapsFromDescriptor = true,
                 UrdfUrl = descriptor.UrdfUrl,
+                TelemetryFields = CloneFields(descriptor.Telemetry?.Fields),
             };
         }
 
@@ -488,35 +497,55 @@ namespace OmniBot.VR.Control
             return copy;
         }
 
-        private static RobotTopics TopicsFromDescriptor(RobotDescriptor descriptor, bool fixedBase)
+        private static RobotTopics TopicsFromDescriptor(RobotDescriptor descriptor, bool fixedBase, bool armOnly)
         {
             var images = new List<string>();
             if (descriptor.Topics.Images != null)
                 images.AddRange(descriptor.Topics.Images);
 
+            string cmd = descriptor.Topics.Cmd;
+            string state = descriptor.Topics.State;
             return new RobotTopics
             {
                 // fixed-base must not be commanded, even if the document names a cmd topic.
-                CmdVel = fixedBase ? "" : descriptor.Topics.Cmd,
+                CmdVel = fixedBase ? "" : cmd,
+                // Arm-only reuses the two required topic slots: cmd is the arm, state is joints.
+                ArmCommands = armOnly ? cmd : "",
+                JointStates = armOnly ? state : "",
+                Odom = armOnly ? "" : state,
                 EmergencyStop = descriptor.Topics.Estop,
-                Odom = descriptor.Topics.State,
                 Heartbeat = descriptor.Topics.Heartbeat,
                 Telemetry = descriptor.Topics.Telemetry,
                 Images = images,
             };
         }
 
-        private static void CopyCatalogOnlyTopics(RobotTopics target, RobotTopics catalog)
+        private static void CopyCatalogOnlyTopics(RobotTopics target, RobotTopics catalog, bool armOnly)
         {
-            target.ControlMode = catalog.ControlMode;
-            target.ControlModeActive = catalog.ControlModeActive;
-            target.ArmCommands = catalog.ArmCommands;
+            // The base mux is not part of an arm-only document.
+            if (!armOnly)
+            {
+                target.ControlMode = catalog.ControlMode;
+                target.ControlModeActive = catalog.ControlModeActive;
+            }
+
+            if (!armOnly || string.IsNullOrEmpty(target.ArmCommands))
+                target.ArmCommands = catalog.ArmCommands;
             target.ArmEnable = catalog.ArmEnable;
             target.IkTargetPose = catalog.IkTargetPose;
             target.Imu = catalog.Imu;
-            target.JointStates = catalog.JointStates;
+            if (!armOnly || string.IsNullOrEmpty(target.JointStates))
+                target.JointStates = catalog.JointStates;
             target.RecordStart = catalog.RecordStart;
             target.RecordStop = catalog.RecordStop;
+        }
+
+        private static string[] CloneFields(string[] fields)
+        {
+            if (fields == null || fields.Length == 0) return Array.Empty<string>();
+            var copy = new string[fields.Length];
+            Array.Copy(fields, copy, fields.Length);
+            return copy;
         }
 
         private static bool IsSo101(RobotDescriptor descriptor)

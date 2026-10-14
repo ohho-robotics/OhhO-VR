@@ -118,6 +118,7 @@ namespace OmniBot.VR.UI
             }
 
             RefreshRobotLabel();
+            ApplyHudRows();
             OnConnectionState(conn != null && conn.IsConnected);
             RefreshRecordingUi();
         }
@@ -141,6 +142,7 @@ namespace OmniBot.VR.UI
 
         private void OnTeleopStarted(RobotProfile profile)
         {
+            ApplyHudRows();
             SubscribeTelemetry();
             RefreshRobotLabel();
         }
@@ -193,13 +195,35 @@ namespace OmniBot.VR.UI
         private void SubscribeTelemetry()
         {
             var ros = ROSBridgeClient.Instance;
-            var topics = _teleop != null ? _teleop.Profile?.Topics : null;
+            var profile = _teleop != null ? _teleop.Profile : null;
+            var topics = profile?.Topics;
             if (ros == null || topics == null) return;
 
             UnsubscribeTelemetry();
-            SubscribeOne(ros, topics.Odom, "nav_msgs/Odometry", _onOdom);
-            SubscribeOne(ros, topics.JointStates, "sensor_msgs/JointState", _onArm);
-            SubscribeOne(ros, topics.ControlModeActive, "std_msgs/String", _onMode);
+            var rows = TeleopHudPlan.Rows(profile);
+            if (TeleopHudPlan.Has(rows, TeleopHudPlan.Pose) || TeleopHudPlan.Has(rows, TeleopHudPlan.Velocity))
+                SubscribeOne(ros, topics.Odom, "nav_msgs/Odometry", _onOdom);
+            if (TeleopHudPlan.Has(rows, TeleopHudPlan.Arm) || TeleopHudPlan.Has(rows, TeleopHudPlan.Gripper))
+                SubscribeOne(ros, topics.JointStates, "sensor_msgs/JointState", _onArm);
+            if (TeleopHudPlan.Has(rows, TeleopHudPlan.Mode))
+                SubscribeOne(ros, topics.ControlModeActive, "std_msgs/String", _onMode);
+        }
+
+        private void ApplyHudRows()
+        {
+            var profile = _teleop != null ? _teleop.Profile : null;
+            if (profile == null) return;
+            var rows = TeleopHudPlan.Rows(profile);
+            SetRowActive(poseText, TeleopHudPlan.Has(rows, TeleopHudPlan.Pose));
+            SetRowActive(velocityText, TeleopHudPlan.Has(rows, TeleopHudPlan.Velocity));
+            SetRowActive(armText,
+                TeleopHudPlan.Has(rows, TeleopHudPlan.Arm) || TeleopHudPlan.Has(rows, TeleopHudPlan.Gripper));
+            SetRowActive(modeText, TeleopHudPlan.Has(rows, TeleopHudPlan.Mode));
+        }
+
+        private static void SetRowActive(TMP_Text text, bool active)
+        {
+            if (text != null) text.gameObject.SetActive(active);
         }
 
         private void SubscribeOne(ROSBridgeClient ros, string topic, string type, Action<string> callback)
