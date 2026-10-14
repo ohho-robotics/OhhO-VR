@@ -12,7 +12,8 @@ namespace OmniBot.VR.Control.Drive
     /// </summary>
     public sealed class ThrusterDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => "Left stick: surge/sway · Right stick Y: heave · Right stick X: yaw · Right grip: turbo";
+        public override string HudHint =>
+            "Left stick: surge/sway · Right stick Y: heave · Right stick X: yaw" + SafetyHudSuffix;
 
         protected override string IdleMode => "offboard";
 
@@ -27,9 +28,9 @@ namespace OmniBot.VR.Control.Drive
 
             // ROV body-frame: surge (forward) → x, sway (right) → y, heave (down/up) → z
             // Convention: right stick Y up → heave up (positive z = up in ROS ENU).
-            float surge = Mathf.Clamp(ly * speedMult, -1f, 1f) * Profile.MaxLinVel;
-            float sway  = Mathf.Clamp(lx * speedMult, -1f, 1f) * Profile.MaxLinVel;
-            float heave = Mathf.Clamp(ry * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float surge = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
+            float sway  = Mathf.Clamp(lx * speedMult, -1f, 1f) * ActiveLinVelLimit;
+            float heave = Mathf.Clamp(ry * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float yaw   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
 
             return new TwistMsg(

@@ -21,14 +21,23 @@ namespace OmniBot.VR.Control
         /// <summary>Right grip held this frame.</summary>
         public bool RightGrip;
 
-        /// <summary>Both grips held — used for the emergency-stop deadman.</summary>
+        /// <summary>Both grips held. This latches emergency stop; it is not a drive or turbo chord.</summary>
         public bool BothGrips;
 
-        /// <summary>Rising edge of both-grips this frame (activates e-stop).</summary>
+        /// <summary>Rising edge of both-grips this frame (latches e-stop).</summary>
         public bool BothGripsPressed;
 
-        /// <summary>Falling edge of both-grips this frame (releases e-stop).</summary>
+        /// <summary>
+        /// Falling edge of both-grips this frame. Does not clear e-stop: the grips are
+        /// also the deadman and turbo, so release-to-clear would resume driving.
+        /// </summary>
         public bool BothGripsReleased;
+
+        /// <summary>
+        /// Explicit e-stop reset this frame (left controller X). Ignored while both
+        /// grips are still held. This is the only input that clears a latched e-stop.
+        /// </summary>
+        public bool ResetEmergencyStop;
 
         /// <summary>Seconds since the previous frame.</summary>
         public float DeltaTime;

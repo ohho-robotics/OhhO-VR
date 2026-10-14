@@ -12,7 +12,8 @@ namespace OmniBot.VR.Control.Drive
     /// </summary>
     public sealed class AckermannDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => "Left stick Y: throttle · Right stick X: steer · Right grip: turbo";
+        public override string HudHint =>
+            "Left stick Y: throttle · Right stick X: steer" + SafetyHudSuffix;
 
         // Mapping the steering stick to an angular velocity at full throttle.
         // A real Ackermann robot would convert ω → δ on its side using its
@@ -24,7 +25,7 @@ namespace OmniBot.VR.Control.Drive
             bool hasSteer = Mathf.Abs(rx) > 0f;
             hasInput = hasFwd || hasSteer;
 
-            float v = Mathf.Clamp(ly * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float v = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
             // Steering maps to angular velocity, scaled by MaxAngVel.
             // When stationary, still allow a turn-in-place approximation so the
             // user can reposition; a real Ackermann robot will ignore ω when v≈0.
