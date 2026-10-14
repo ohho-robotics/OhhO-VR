@@ -9,16 +9,15 @@ namespace OmniBot.VR.Core
     /// which is what made the app "look like an old 3D game".
     ///
     /// What this does, once, at startup (and re-applies on quality level change):
-    ///   - XRSettings.eyeTextureResolutionScale  (default 1.5x — sharper everything)
+    ///   - XRSettings.eyeTextureResolutionScale (scene uses 1.5x)
     ///   - MSAA 4x on the eye texture
-    ///   - Fixed Foveated Rendering OFF (FFR blurs the periphery; the user asked
-    ///     for maximum clarity — Quest 3 has headroom for a UI-driven app)
-    ///   - 90 Hz display refresh request (smoother hand tracking + UI)
+    ///   - Fixed foveation at <see cref="QuestGraphicsPlan.Foveation"/> (dynamic off)
+    ///   - CPU and GPU hints at SustainedHigh (not Boost — see the 30-min soak)
+    ///   - 90 Hz display refresh request (72 Hz is the floor, not the request)
     ///   - Full-res textures (mipmap limit 0) + anisotropic filtering
-    ///   - Linear-space skinning flags that keep hand meshes crisp in both eyes
     ///
-    /// Attach once to the app bootstrap GameObject. All values are tunable in
-    /// the inspector; defaults favor clarity over battery life.
+    /// Development builds also gain a <see cref="QuestPerfSampler"/>. Release
+    /// builds do not. Attach once to the app bootstrap GameObject.
     /// </summary>
     public class VRGraphicsBoost : MonoBehaviour
     {
@@ -34,8 +33,21 @@ namespace OmniBot.VR.Core
         [SerializeField] private int msaaSamples = 4;
 
         [Header("Foveation")]
-        [Tooltip("Fixed Foveated Rendering blurs the lens edges. Off = maximum clarity.")]
+        [Tooltip("Legacy switch. Used only when Apply Fixed Foveation is off.")]
         [SerializeField] private bool ffrEnabled;
+
+        [Tooltip("When on, Fixed Foveation is the level below and dynamic foveation stays off.")]
+        [SerializeField] private bool applyFixedFoveation = true;
+
+        [SerializeField] private OVRManager.FoveatedRenderingLevel fixedFoveation = QuestGraphicsPlan.Foveation;
+
+        [Header("CPU / GPU")]
+        [Tooltip("SustainedHigh is the soak default. Boost holds higher clocks and is more likely to thermal-throttle.")]
+        [SerializeField] private bool applyPerformanceLevels = true;
+
+        [SerializeField] private OVRManager.ProcessorPerformanceLevel cpuLevel = QuestGraphicsPlan.CpuLevel;
+
+        [SerializeField] private OVRManager.ProcessorPerformanceLevel gpuLevel = QuestGraphicsPlan.GpuLevel;
 
         [Header("Refresh rate")]
         [Tooltip("Requested display refresh in Hz (72/90/120). 0 = leave at system default.")]
@@ -47,6 +59,7 @@ namespace OmniBot.VR.Core
         private void Awake()
         {
             Apply();
+            EnsureDevelopmentSampler();
         }
 
         private void OnEnable()
@@ -64,10 +77,16 @@ namespace OmniBot.VR.Core
             // ── MSAA ─────────────────────────────────────────────────────────
             QualitySettings.antiAliasing = msaaSamples;
 
-            // ── Fixed foveated rendering ─────────────────────────────────────
-            OVRManager.fixedFoveatedRenderingLevel = ffrEnabled
-                ? OVRManager.FixedFoveatedRenderingLevel.Low
-                : OVRManager.FixedFoveatedRenderingLevel.Off;
+            // ── Fixed foveation and CPU/GPU hints ───────────────────────────
+            OVRManager.FoveatedRenderingLevel foveation = QuestGraphicsPlan.ResolveFoveation(
+                applyFixedFoveation, fixedFoveation, ffrEnabled);
+            OVRManager.foveatedRenderingLevel = foveation;
+            OVRManager.useDynamicFoveatedRendering = false;
+            if (applyPerformanceLevels)
+            {
+                OVRManager.suggestedCpuPerfLevel = cpuLevel;
+                OVRManager.suggestedGpuPerfLevel = gpuLevel;
+            }
 
             // ── Refresh rate ─────────────────────────────────────────────────
             if (displayRefreshHz > 0f && OVRManager.display != null)
@@ -92,7 +111,16 @@ namespace OmniBot.VR.Core
             }
 
             Debug.Log($"[VRGraphicsBoost] Applied — eyeTextureResolutionScale={eyeTextureResolutionScale}, " +
-                      $"MSAA={msaaSamples}x, FFR={(ffrEnabled ? "Low" : "Off")}.");
+                      $"MSAA={msaaSamples}x, foveation={foveation}, dynamic=off, " +
+                      $"cpu={(applyPerformanceLevels ? cpuLevel.ToString() : "unchanged")}, " +
+                      $"gpu={(applyPerformanceLevels ? gpuLevel.ToString() : "unchanged")}.");
+        }
+
+        private void EnsureDevelopmentSampler()
+        {
+            if (!QuestPerfBudget.ShouldSample(Debug.isDebugBuild, true)) return;
+            if (GetComponent<QuestPerfSampler>() != null) return;
+            gameObject.AddComponent<QuestPerfSampler>();
         }
     }
 }

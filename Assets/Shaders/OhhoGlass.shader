@@ -1,20 +1,26 @@
-// OhhO glass panel — URP unlit, transparent. Recreates the website's frosted
-// glass card (components/GlassCard.tsx) for world-space VR panels over Quest
-// passthrough: a translucent dark fill with a rounded-rect accent border that
-// glows in OhhO cyan/violet, plus a soft inner vignette.
+// OhhO glass panel — Built-in unlit, transparent. The project has no URP
+// package (GraphicsSettings m_CustomRenderPipeline is unset), so this pass
+// uses UnityCG instead of the Universal ShaderLibrary include, which would
+// not compile here.
 //
-// Real backdrop blur is intentionally omitted: over passthrough there is no
-// camera scene-colour to sample, and blur is costly on Quest. A tasteful
-// translucent gradient + glowing rim reads as "glass" and stays cheap.
+// Recreates the website's frosted glass card for world-space panels over
+// Quest passthrough: a translucent dark fill, a rounded-rect accent border,
+// and a soft inner vignette. Real backdrop blur is omitted: over passthrough
+// there is no scene color to sample, and a blur is a full-screen bandwidth hit.
 //
-// Apply to a panel Quad or a UI RawImage. Drive _FillColor/_AccentColor from
-// OhhoTheme via the GlassPanel component (UI/Theme/GlassPanel.cs).
+// Overdraw: one face only (Cull Back), depth-tested, and fragments outside
+// the rounded rect are discarded so the four corners do not blend. The
+// translucent fill still composites the panel interior over passthrough;
+// that cost is the glass look itself.
+//
+// Apply to a panel Quad or a UI Image. Drive _FillColor/_AccentColor from
+// OhhoTheme via GlassPanel (UI/Theme/GlassPanel.cs).
 Shader "OhhO/Glass"
 {
     Properties
     {
-        _FillColor   ("Fill Color", Color)   = (0.039, 0.055, 0.102, 0.62) // ~#0A0E1A @ .62
-        _AccentColor ("Accent Color", Color) = (0.0, 0.831, 1.0, 1.0)      // cyan #00D4FF
+        _FillColor   ("Fill Color", Color)   = (0.039, 0.055, 0.102, 0.62)
+        _AccentColor ("Accent Color", Color) = (0.0, 0.831, 1.0, 1.0)
         _BorderWidth ("Border Width", Range(0,0.2)) = 0.012
         _BorderGlow  ("Border Glow", Range(0,4)) = 1.6
         _Radius      ("Corner Radius", Range(0,0.5)) = 0.06
@@ -23,73 +29,79 @@ Shader "OhhO/Glass"
 
     SubShader
     {
-        Tags { "RenderType"="Transparent" "Queue"="Transparent" "RenderPipeline"="UniversalPipeline" "IgnoreProjector"="True" }
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" "IgnoreProjector"="True" }
         LOD 100
 
         Pass
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            Cull Off
+            ZTest LEqual
+            Cull Back
 
-            HLSLPROGRAM
+            CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "UnityCG.cginc"
 
-            struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
-            struct Varyings   { float4 positionHCS : SV_POSITION; float2 uv : TEXCOORD0; float4 color : COLOR; };
+            struct appdata
+            {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+                float4 color : COLOR;
+            };
+
+            struct v2f
+            {
+                float4 pos : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float4 color : COLOR;
+            };
 
             float4 _FillColor;
             float4 _AccentColor;
-            float  _BorderWidth;
-            float  _BorderGlow;
-            float  _Radius;
-            float  _Softness;
+            float _BorderWidth;
+            float _BorderGlow;
+            float _Radius;
+            float _Softness;
 
-            Varyings vert (Attributes IN)
+            v2f vert(appdata v)
             {
-                Varyings OUT;
-                OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.uv = IN.uv;
-                OUT.color = IN.color;
-                return OUT;
+                v2f o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                o.uv = v.uv;
+                o.color = v.color;
+                return o;
             }
 
-            // Signed distance to a rounded rectangle centered in [0,1] UV space.
             float roundedBoxSDF(float2 p, float2 halfSize, float radius)
             {
                 float2 q = abs(p) - halfSize + radius;
                 return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
             }
 
-            half4 frag (Varyings IN) : SV_Target
+            half4 frag(v2f i) : SV_Target
             {
-                // UV → centered coords [-0.5,0.5]
-                float2 p = IN.uv - 0.5;
+                float2 p = i.uv - 0.5;
                 float d = roundedBoxSDF(p, float2(0.5, 0.5), _Radius);
 
-                // Panel mask (inside the rounded rect), with soft edge.
-                float panel = 1.0 - smoothstep(-_Softness, _Softness, d);
+                // Outside the soft edge the pixel is fully transparent. Discard
+                // it so the corner does not read and blend the framebuffer.
+                if (d > _Softness) discard;
 
-                // Border band: bright near the edge, fading inward.
+                float panel = 1.0 - smoothstep(-_Softness, _Softness, d);
                 float border = smoothstep(-_BorderWidth - _Softness, -_BorderWidth, d)
                              * (1.0 - smoothstep(-_Softness, _Softness, d));
-
-                // Subtle inner vignette so the fill feels lit from the top-left,
-                // matching the site's gradient glass.
                 float vignette = saturate(1.0 - length(p) * 0.6);
 
                 half4 fill = _FillColor;
                 fill.rgb *= (0.85 + 0.3 * vignette);
 
-                // Compose: fill + glowing accent border.
                 half3 rgb = fill.rgb + _AccentColor.rgb * border * _BorderGlow;
-                half  a   = max(fill.a * panel, border) * IN.color.a;
-
-                return half4(rgb * IN.color.rgb, a);
+                half a = max(fill.a * panel, border) * i.color.a;
+                return half4(rgb * i.color.rgb, a);
             }
-            ENDHLSL
+            ENDCG
         }
     }
     Fallback Off

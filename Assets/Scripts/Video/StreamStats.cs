@@ -46,6 +46,10 @@ namespace OmniBot.VR.Video
     /// <summary>Text for the fps and frame-age overlay.</summary>
     public static class StreamOverlay
     {
+        private static string _cached;
+        private static int _cachedFps = int.MinValue;
+        private static int _cachedAge = int.MinValue;
+
         public static float AgeMilliseconds(double receivedAtSeconds, double nowSeconds)
         {
             if (receivedAtSeconds <= 0) return 0f;
@@ -61,8 +65,31 @@ namespace OmniBot.VR.Video
             int ageInt = (int)Math.Round(ageMs);
             if (fpsInt < 0) fpsInt = 0;
             if (ageInt < 0) ageInt = 0;
-            return fpsInt.ToString(CultureInfo.InvariantCulture) + " fps  ·  "
+            if (_cached != null && fpsInt == _cachedFps && ageInt == _cachedAge)
+                return _cached;
+            _cachedFps = fpsInt;
+            _cachedAge = ageInt;
+            _cached = fpsInt.ToString(CultureInfo.InvariantCulture) + " fps  ·  "
                 + ageInt.ToString(CultureInfo.InvariantCulture) + " ms";
+            return _cached;
+        }
+    }
+
+    /// <summary>
+    /// Decides when a TMP label may be rewritten. Same text never republishes.
+    /// A different string waits out <see cref="IntervalSeconds"/> so a 30–90 Hz
+    /// caller does not rebuild the mesh every frame.
+    /// </summary>
+    public static class OverlayTextGate
+    {
+        public const double IntervalSeconds = 0.2;
+
+        public static bool ShouldPublish(string current, string incoming, double nowSeconds, double notBeforeSeconds)
+        {
+            if (incoming == null) return false;
+            if (incoming == current) return false;
+            if (notBeforeSeconds >= 0.0 && nowSeconds < notBeforeSeconds) return false;
+            return true;
         }
     }
 }

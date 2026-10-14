@@ -33,9 +33,12 @@ namespace OmniBot.VR.Video
         private readonly MonoBehaviour _host;
         private readonly BaselineJpegDecoder _decoder = new BaselineJpegDecoder();
         private readonly object _gate = new object();
+        private readonly DecodeJob _job = new DecodeJob();
+        private static readonly WaitCallback DecodeCallback = OnDecode;
         private Coroutine _coroutine;
         private Texture2D _texture;
         private byte[] _workerRgb;
+        private byte[] _jpegSlot;
         private byte[] _pending;
         private byte[] _upload;
         private int _pendingW;
@@ -72,9 +75,10 @@ namespace OmniBot.VR.Video
             lock (_gate)
             {
                 _generation++;
-                _decodeBusy = false;
+                // Leave _decodeBusy set. The worker clears it when it finishes
+                // reading _jpegSlot, so a new stream cannot overwrite that buffer
+                // mid-decode. There is only one slot.
                 _hasPending = false;
-                _pending = null;
             }
             _lastSubmit = -1;
             if (_coroutine != null && _host != null)
@@ -154,25 +158,48 @@ namespace OmniBot.VR.Video
             if (_disposed || generation != _generation || length <= 0) return;
             double now = Time.realtimeSinceStartupAsDouble;
             if (!FramePacer.ShouldTake(_lastSubmit, now)) return;
+            byte[] jpeg;
             lock (_gate)
             {
                 if (_decodeBusy || generation != _generation) return;
                 _decodeBusy = true;
                 _lastSubmit = now;
+                jpeg = ByteScratch.Ensure(ref _jpegSlot, length);
+                Buffer.BlockCopy(src, offset, jpeg, 0, length);
+                _job.Owner = this;
+                _job.Buffer = jpeg;
+                _job.Length = length;
+                _job.Generation = generation;
+                _job.ReceivedAt = now;
             }
 
-            var copy = new byte[length];
-            Buffer.BlockCopy(src, offset, copy, 0, length);
-            ThreadPool.QueueUserWorkItem(_ => DecodeWorker(copy, generation, now));
+            try
+            {
+                ThreadPool.QueueUserWorkItem(DecodeCallback, _job);
+            }
+            catch
+            {
+                lock (_gate)
+                {
+                    if (generation == _generation) _decodeBusy = false;
+                }
+                throw;
+            }
         }
 
-        private void DecodeWorker(byte[] jpeg, int generation, double receivedAt)
+        private static void OnDecode(object state)
+        {
+            var job = (DecodeJob)state;
+            job.Owner.DecodeWorker(job.Buffer, job.Length, job.Generation, job.ReceivedAt);
+        }
+
+        private void DecodeWorker(byte[] jpeg, int length, int generation, double receivedAt)
         {
             try
             {
                 if (generation != _generation || _disposed) return;
                 byte[] rgb = _workerRgb;
-                if (!_decoder.TryDecode(jpeg, jpeg.Length, ref rgb, out int w, out int h, out _))
+                if (!_decoder.TryDecode(jpeg, length, ref rgb, out int w, out int h, out _))
                     return;
                 _workerRgb = rgb;
                 if (generation != _generation || _disposed) return;
@@ -180,7 +207,7 @@ namespace OmniBot.VR.Video
                 lock (_gate)
                 {
                     if (generation != _generation || _disposed) return;
-                    if (_pending == null || _pending.Length < bytes) _pending = new byte[bytes];
+                    ByteScratch.Ensure(ref _pending, bytes);
                     Buffer.BlockCopy(rgb, 0, _pending, 0, bytes);
                     _pendingW = w;
                     _pendingH = h;
@@ -192,7 +219,7 @@ namespace OmniBot.VR.Video
             {
                 lock (_gate)
                 {
-                    if (generation == _generation) _decodeBusy = false;
+                    _decodeBusy = false;
                 }
             }
         }
@@ -211,6 +238,7 @@ namespace OmniBot.VR.Video
                 h = _pendingH;
                 at = _pendingAt;
                 int bytes = w * h * 3;
+                // LoadRawTextureData(byte[]) requires the array length to match the texture.
                 if (_upload == null || _upload.Length != bytes) _upload = new byte[bytes];
                 BaselineJpegDecoder.FlipVertical(_pending, _upload, w, h);
                 pending = _upload;
@@ -230,6 +258,15 @@ namespace OmniBot.VR.Video
             LastFrameReceivedAt = at;
             HasPresentedFrame = true;
             OnFrame?.Invoke(_texture);
+        }
+
+        private sealed class DecodeJob
+        {
+            public MjpegVideoSource Owner;
+            public byte[] Buffer;
+            public int Length;
+            public int Generation;
+            public double ReceivedAt;
         }
 
         private sealed class MjpegDownloadHandler : DownloadHandlerScript

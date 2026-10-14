@@ -1,5 +1,4 @@
 using System;
-using System.Text;
 
 namespace OmniBot.VR.Video
 {
@@ -7,10 +6,13 @@ namespace OmniBot.VR.Video
     /// Pulls one JPEG out of a <c>multipart/x-mixed-replace</c> buffer.
     /// Content-Length wins when the body is complete. Otherwise the scan is
     /// SOI (FF D8) through EOI (FF D9), the same fallback the original feed used.
+    /// The scan does not allocate: headers are matched as bytes.
     /// </summary>
     public static class MjpegFrameParser
     {
         public const int BoundarySearchSize = 512;
+
+        private static readonly byte[] ContentLengthToken = { 99, 111, 110, 116, 101, 110, 116, 45, 108, 101, 110, 103, 116, 104, 58 };
 
         public static bool TryExtractJpeg(byte[] buf, int len, int offset, out int frameStart, out int frameLen)
         {
@@ -18,29 +20,9 @@ namespace OmniBot.VR.Video
             frameLen = 0;
             if (buf == null || offset < 0 || len - offset < 4 || len > buf.Length) return false;
 
-            int window = Math.Min(BoundarySearchSize, len - offset);
-            string header = Encoding.ASCII.GetString(buf, offset, window);
-            int clIdx = header.IndexOf("Content-Length:", StringComparison.OrdinalIgnoreCase);
-            if (clIdx >= 0)
-            {
-                int eolIdx = header.IndexOf("\r\n\r\n", clIdx);
-                if (eolIdx >= 0)
-                {
-                    int headerEnd = offset + eolIdx + 4;
-                    int clEnd = header.IndexOf('\r', clIdx + 15);
-                    if (clEnd < 0) clEnd = header.IndexOf('\n', clIdx + 15);
-                    if (clEnd > 0)
-                    {
-                        string clStr = header.Substring(clIdx + 15, clEnd - (clIdx + 15)).Trim();
-                        if (int.TryParse(clStr, out int contentLen) && contentLen > 0 && headerEnd + contentLen <= len)
-                        {
-                            frameStart = headerEnd;
-                            frameLen = contentLen;
-                            return true;
-                        }
-                    }
-                }
-            }
+            int windowEnd = offset + Math.Min(BoundarySearchSize, len - offset);
+            if (TryContentLength(buf, offset, windowEnd, len, out frameStart, out frameLen))
+                return true;
 
             for (int i = offset; i < len - 1; i++)
             {
@@ -59,6 +41,95 @@ namespace OmniBot.VR.Video
                 }
             }
             return false;
+        }
+
+        private static bool TryContentLength(byte[] buf, int offset, int windowEnd, int len, out int frameStart, out int frameLen)
+        {
+            frameStart = 0;
+            frameLen = 0;
+            int idx = FindIgnoreCase(buf, offset, windowEnd, ContentLengthToken);
+            if (idx < 0) return false;
+
+            int tokenLen = ContentLengthToken.Length;
+            int p = idx + tokenLen;
+            while (p < windowEnd && (buf[p] == (byte)' ' || buf[p] == (byte)'\t')) p++;
+            if (p >= windowEnd || buf[p] < (byte)'0' || buf[p] > (byte)'9') return false;
+
+            int value = 0;
+            while (p < windowEnd && buf[p] >= (byte)'0' && buf[p] <= (byte)'9')
+            {
+                int digit = buf[p] - (byte)'0';
+                if (value > (int.MaxValue - digit) / 10) return false;
+                value = value * 10 + digit;
+                p++;
+            }
+            if (value <= 0) return false;
+
+            while (p < windowEnd && (buf[p] == (byte)' ' || buf[p] == (byte)'\t')) p++;
+            if (p >= windowEnd || (buf[p] != (byte)'\r' && buf[p] != (byte)'\n')) return false;
+
+            int blank = FindCrlfCrlf(buf, idx, windowEnd);
+            if (blank < 0) return false;
+            int headerEnd = blank + 4;
+            if (headerEnd + value > len) return false;
+            frameStart = headerEnd;
+            frameLen = value;
+            return true;
+        }
+
+        private static int FindIgnoreCase(byte[] buf, int start, int end, byte[] lowerLiteral)
+        {
+            int last = end - lowerLiteral.Length;
+            for (int i = start; i <= last; i++)
+            {
+                bool match = true;
+                for (int k = 0; k < lowerLiteral.Length; k++)
+                {
+                    byte b = buf[i + k];
+                    if (b >= (byte)'A' && b <= (byte)'Z') b = (byte)(b + 32);
+                    if (b != lowerLiteral[k])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return i;
+            }
+            return -1;
+        }
+
+        private static int FindCrlfCrlf(byte[] buf, int start, int end)
+        {
+            int last = end - 4;
+            for (int i = start; i <= last; i++)
+            {
+                if (buf[i] == (byte)'\r' && buf[i + 1] == (byte)'\n' && buf[i + 2] == (byte)'\r' && buf[i + 3] == (byte)'\n')
+                    return i;
+            }
+            return -1;
+        }
+    }
+
+    /// <summary>Grows a byte buffer and then reuses it. Callers overwrite the bytes they need.</summary>
+    public static class ByteScratch
+    {
+        public static byte[] Ensure(ref byte[] buffer, int minLength)
+        {
+            if (minLength <= 0) throw new ArgumentOutOfRangeException(nameof(minLength));
+            if (buffer != null && buffer.Length >= minLength) return buffer;
+            int size = 64 * 1024;
+            if (buffer != null && buffer.Length > size) size = buffer.Length;
+            while (size < minLength)
+            {
+                if (size > 16 * 1024 * 1024)
+                {
+                    size = minLength;
+                    break;
+                }
+                size *= 2;
+            }
+            buffer = new byte[size];
+            return buffer;
         }
     }
 

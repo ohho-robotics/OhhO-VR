@@ -9459,6 +9459,11 @@ MonoBehaviour:
   renderViewportScale: 1
   msaaSamples: 4
   ffrEnabled: 0
+  applyFixedFoveation: 1
+  fixedFoveation: 2
+  applyPerformanceLevels: 1
+  cpuLevel: 2
+  gpuLevel: 2
   displayRefreshHz: 90
   fullResolutionTextures: 1
 --- !u!1 &1660278042
