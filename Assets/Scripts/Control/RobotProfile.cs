@@ -35,6 +35,13 @@ namespace OmniBot.VR.Control
         public string Manufacturer;
         public string Category;         // catalog category id
 
+        /// <summary>
+        /// <c>real</c> or <c>sim</c>. Real robots do not return to nav2 when the
+        /// sticks go idle; the operator uses the Nav2 button or sends a goal.
+        /// A missing value is treated as real.
+        /// </summary>
+        public string DeploymentKind = "real";
+
         // ── Base / locomotion ─────────────────────────────────────────────────
         public DriveKind Drive;
         public string DriveLabel;

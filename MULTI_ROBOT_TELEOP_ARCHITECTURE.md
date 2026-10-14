@@ -82,6 +82,9 @@ scene/prefab work in the editor._
   (both-grips), turbo (right grip), dead-zone, 20 Hz publish-timing and
   control-mode management from `MecanumDriveScheme`. Every drive scheme
   inherits it and only implements `ComputeVelocity` → `TwistMsg`.
+  `kind=real` does not publish `nav2` on idle; that mode is the Nav2 button
+  or a new goal. A stick while Nav2 is active cancels the goal and returns
+  to teleop. Simulated robots still revert to `nav2` after 0.5 s idle.
 - **`DifferentialDriveScheme`** — `[v, ω]` for differential / skid-steer /
   tracked / rocker-bogie / unknown bases (TurtleBot 4, tracked robots).
 - **`AckermannDriveScheme`** — `[v, δ]` for car-like steering.

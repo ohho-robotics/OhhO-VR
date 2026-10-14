@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (73 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -131,6 +131,14 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 | **Both grips simultaneously** | **Emergency stop** (held = stop, release = clear) |
 | Left controller B | Hide / show the OhhO Screen |
 | Right thumbstick press | Cycle camera feed |
+
+### Navigation (Nav2)
+
+The teleop page lists named waypoints and shows the occupancy grid from `/map`. Choosing a waypoint, or tapping the map, sends `navigate_to_pose` and sets `/control_mode` to `nav2`. The same panel shows `/plan`, the goal status, and the ETA from the action feedback. **Cancel** publishes `/mission/cancel` and cancels that action.
+
+Waypoint names come from `/ohho/nav/list_waypoints`, the rosapi params `/ohho/waypoints` and `/waypoints`, or the `/ohho/waypoints` topic. Until one of those answers, the list is the apartment contract (`kitchen`, `desk`, `door`, `home`).
+
+A real robot (`kind=real`, or any garage robot that is not `simulated`) stays in teleop when the sticks go idle. Nav2 starts only from the **Nav2** button or a goal. A simulated robot still returns to `nav2` after 0.5 s idle. Any thumbstick outside the dead zone while Nav2 is active cancels the goal and returns to teleop. Emergency stop is unchanged.
 
 ### Hand Tracking Arm Control
 

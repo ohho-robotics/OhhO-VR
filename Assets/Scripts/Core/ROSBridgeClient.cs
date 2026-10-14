@@ -40,6 +40,11 @@ namespace OmniBot.VR.Core
         public event Action OnDisconnected;
         public event Action<string> OnError;
 
+        /// <summary>Non-publish rosbridge frames (action feedback/result, service responses).</summary>
+        public event Action<string> OnProtocolMessage;
+
+        private readonly RosbridgeFragmentBuffer _fragments = new RosbridgeFragmentBuffer();
+
         // ── Private fields ───────────────────────────────────────────────────
         private WebSocket _socket;
         private readonly ConcurrentQueue<(string topic, string json)> _incomingQueue
@@ -136,6 +141,9 @@ namespace OmniBot.VR.Core
             var msg = new ROSAdvertiseMessage(topic, type);
             SendJson(JsonConvert.SerializeObject(msg));
         }
+
+        /// <summary>Sends a raw rosbridge frame (action goal, service call, cancel).</summary>
+        public void SendRaw(string json) => SendJson(json);
 
         /// <summary>Serializes and publishes a message to a ROS topic.</summary>
         public void Publish<T>(string topic, T msg)
@@ -234,6 +242,14 @@ namespace OmniBot.VR.Core
             _incomingQueue.Enqueue(("__error__", errorMsg));
         }
 
+        private static int FragmentCount(JToken token)
+        {
+            if (token == null) return -1;
+            if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
+                return token.Value<int>();
+            return int.TryParse(token.ToString(), out var value) ? value : -1;
+        }
+
         private void HandleMessage(byte[] data)
         {
             string json = System.Text.Encoding.UTF8.GetString(data);
@@ -242,6 +258,20 @@ namespace OmniBot.VR.Core
                 // Quick op check without full deserialize
                 JObject root = JObject.Parse(json);
                 string op = root["op"]?.ToString();
+                if (op == "fragment")
+                {
+                    string id = root["id"]?.ToString();
+                    int num = FragmentCount(root["num"]);
+                    int total = FragmentCount(root["total"]);
+                    string piece = root["data"]?.Type == JTokenType.String ? root["data"].ToString() : null;
+                    string full;
+                    lock (_fragments)
+                        full = piece == null ? null : _fragments.Push(id, num, total, piece);
+                    if (string.IsNullOrEmpty(full)) return;
+                    root = JObject.Parse(full);
+                    op = root["op"]?.ToString();
+                    json = full;
+                }
                 if (op == "publish")
                 {
                     string topic = root["topic"]?.ToString();
@@ -250,6 +280,10 @@ namespace OmniBot.VR.Core
                         string msgJson = root["msg"]?.ToString(Formatting.None) ?? "{}";
                         _incomingQueue.Enqueue((topic, msgJson));
                     }
+                }
+                else if (!string.IsNullOrEmpty(op))
+                {
+                    _incomingQueue.Enqueue(("__protocol__", json));
                 }
             }
             catch (Exception ex)
@@ -276,6 +310,11 @@ namespace OmniBot.VR.Core
             if (topic == "__error__")
             {
                 OnError?.Invoke(json);
+                return;
+            }
+            if (topic == "__protocol__")
+            {
+                OnProtocolMessage?.Invoke(json);
                 return;
             }
 

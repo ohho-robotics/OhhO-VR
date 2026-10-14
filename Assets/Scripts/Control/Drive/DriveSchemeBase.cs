@@ -1,5 +1,6 @@
 using UnityEngine;
 using OmniBot.VR.Core;
+using OmniBot.VR.Nav;
 
 namespace OmniBot.VR.Control.Drive
 {
@@ -9,7 +10,9 @@ namespace OmniBot.VR.Control.Drive
     /// underwater ROV: emergency-stop edge detection (both grips), turbo
     /// (right grip held alone), thumbstick dead-zone, 20 Hz publish-rate timing,
     /// zero-stop after 0.1 s idle, and the <c>/control_mode</c>
-    /// teleop↔idle management.
+    /// teleop↔idle management. Real robots (<c>kind=real</c>) do not publish
+    /// <c>nav2</c> on idle — that mode is the Nav2 button or a new goal.
+    /// Any stick input while Nav2 is active cancels the goal and returns to teleop.
     ///
     /// Subclasses implement <see cref="ComputeVelocity"/> — the scheme-specific
     /// mapping of dead-zoned thumbsticks + turbo flag → a
@@ -20,7 +23,7 @@ namespace OmniBot.VR.Control.Drive
         protected const float DeadZone = 0.1f;
         protected const float TurboMultiplier = 2.0f;
         protected const float ZeroStopDelay = 0.1f;       // s before we stop publishing zeros
-        protected const float IdleModeRevertDelay = 0.5f; // s idle → revert control mode
+        protected const float IdleModeRevertDelay = 0.5f; // s idle → revert control mode (sim / non-nav2)
         protected const float PublishHz = 20f;
 
         protected RobotProfile Profile;
@@ -32,16 +35,17 @@ namespace OmniBot.VR.Control.Drive
         protected bool PrevBothGrips;
         protected bool IsPublishing;
         protected float NoInputTimer;
-        protected float NoInputModeTimer;
-        protected bool InTeleopMode;
+
+        private readonly ControlModeMachine _mode = new ControlModeMachine();
 
         public bool IsConfigured => Profile != null;
         public abstract string HudHint { get; }
 
         /// <summary>
         /// Control-mode string published after the idle timeout. Ground robots
-        /// revert to "nav2"; aerial/underwater robots can override (e.g. "offboard"
-        /// or an empty string to leave the mode untouched).
+        /// use "nav2", which is suppressed for kind=real so an old goal cannot
+        /// resume on its own. Aerial/underwater robots override this (e.g.
+        /// "offboard", or an empty string to leave the mode untouched).
         /// </summary>
         protected virtual string IdleMode => "nav2";
 
@@ -57,8 +61,11 @@ namespace OmniBot.VR.Control.Drive
             PrevBothGrips = false;
             IsPublishing = false;
             NoInputTimer = 0f;
-            NoInputModeTimer = 0f;
-            InTeleopMode = false;
+            _mode.IdleDelay = IdleModeRevertDelay;
+            _mode.Reset(IdleMode, profile != null ? profile.DeploymentKind : RobotDeployment.Real);
+            _mode.ActiveMode = ActiveMode;
+            if (profile != null)
+                NavGoalSession.Active.SetDeployment(profile.DeploymentKind);
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
@@ -107,15 +114,32 @@ namespace OmniBot.VR.Control.Drive
         public void Stop(IRobotLink link)
         {
             if (!IsConfigured || Profile == null) return;
+            bool cancelNav = RobotDeployment.IsReal(Profile.DeploymentKind)
+                && (NavGoalSession.Active.GoalActive || NavGoalSession.Active.ModeIsNav2);
+            if (cancelNav)
+                NavGoalSession.Active.CancelFromButton(link);
             if (link != null && link.IsConnected)
             {
                 link.Publish(Profile.Topics.CmdVel, ZeroTwist());
-                if (InTeleopMode) PublishControlMode(IdleMode, link);
+                string idle = _mode.Stop();
+                if (cancelNav)
+                {
+                    // Leave the real robot in teleop so a late Nav2 command cannot run.
+                    PublishControlMode(ActiveMode, link);
+                    NavGoalSession.Active.NoteModePublished(ActiveMode);
+                }
+                else if (!string.IsNullOrEmpty(idle))
+                {
+                    PublishControlMode(idle, link);
+                    NavGoalSession.Active.NoteModePublished(idle);
+                }
             }
-            InTeleopMode = false;
+            else
+            {
+                _mode.Stop();
+            }
             IsPublishing = false;
             NoInputTimer = 0f;
-            NoInputModeTimer = 0f;
         }
 
         // ── To override ──────────────────────────────────────────────────────────
@@ -155,26 +179,17 @@ namespace OmniBot.VR.Control.Drive
 
         private void UpdateControlMode(bool hasInput, float dt, IRobotLink link)
         {
-            if (hasInput)
-            {
-                NoInputTimer = 0f;
-                NoInputModeTimer = 0f;
-                if (!InTeleopMode)
-                {
-                    InTeleopMode = true;
-                    PublishControlMode(ActiveMode, link);
-                }
-            }
-            else
-            {
-                NoInputTimer += dt;
-                NoInputModeTimer += dt;
-                if (InTeleopMode && NoInputModeTimer >= IdleModeRevertDelay)
-                {
-                    InTeleopMode = false;
-                    PublishControlMode(IdleMode, link);
-                }
-            }
+            if (hasInput) NoInputTimer = 0f;
+            else NoInputTimer += dt;
+
+            _mode.ActiveMode = ActiveMode;
+            NavStickHandover.Apply(
+                _mode,
+                NavGoalSession.Active,
+                link,
+                Profile.Topics.ControlMode,
+                hasInput,
+                dt);
         }
 
         protected void PublishControlMode(string mode, IRobotLink link)

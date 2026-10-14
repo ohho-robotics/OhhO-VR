@@ -1,5 +1,7 @@
 using UnityEngine;
+using OmniBot.VR.Control;
 using OmniBot.VR.Core;
+using OmniBot.VR.Nav;
 
 namespace OmniBot.VR.Input
 {
@@ -17,8 +19,10 @@ namespace OmniBot.VR.Input
     /// Publishing behaviour:
     ///   - Publishes at CMD_VEL_PUBLISH_HZ while thumbsticks are active.
     ///   - Stops publishing zero-velocity commands after 0.1 s of no input.
-    ///   - Sends /control_mode = "teleop" when driving,
-    ///             /control_mode = "nav2"   after 0.5 s of no input.
+    ///   - Sends /control_mode = "teleop" when driving.
+    ///   - Does not return to nav2 on idle. This legacy controller has no
+    ///     simulator flag, so it follows kind=real: Nav2 is the mode button
+    ///     or a goal. A stick while Nav2 is active cancels the goal.
     /// </summary>
     public class BaseController : MonoBehaviour
     {
@@ -26,15 +30,12 @@ namespace OmniBot.VR.Input
         private const float DeadZone            = 0.1f;
         private const float TurboMultiplier     = 2.0f;
         private const float ZeroStopDelay       = 0.1f;  // s before we stop publishing zeros
-        private const float NavModeRevertDelay  = 0.5f;  // s of no input → revert to nav2
-
         // ── State ────────────────────────────────────────────────────────────
         private bool  _emergencyStopActive  = false;
         private bool  _prevBothGrips        = false;
         private bool  _isPublishing         = false;
         private float _noInputTimer         = 0f;
-        private float _noInputModeTimer     = 0f;
-        private bool  _inTeleopMode         = false;
+        private readonly ControlModeMachine _mode = new ControlModeMachine();
 
         // Publish timer
         private float _publishInterval;
@@ -44,6 +45,7 @@ namespace OmniBot.VR.Input
         private void Awake()
         {
             _publishInterval = 1f / RobotConfig.CMD_VEL_PUBLISH_HZ;
+            _mode.Reset("nav2", RobotDeployment.Real);
         }
 
         private void Update()
@@ -104,28 +106,18 @@ namespace OmniBot.VR.Input
             float vy      = Mathf.Clamp(lx * speedMult, -1f, 1f) * RobotConfig.MAX_LINEAR_VEL;
             float omega   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * RobotConfig.MAX_ANGULAR_VEL;
 
-            // ── Control mode management ──────────────────────────────────────
-            if (hasInput)
-            {
-                _noInputTimer     = 0f;
-                _noInputModeTimer = 0f;
-                if (!_inTeleopMode)
-                {
-                    _inTeleopMode = true;
-                    PublishControlMode("teleop");
-                }
-            }
-            else
-            {
-                _noInputTimer     += Time.deltaTime;
-                _noInputModeTimer += Time.deltaTime;
-
-                if (_inTeleopMode && _noInputModeTimer >= NavModeRevertDelay)
-                {
-                    _inTeleopMode = false;
-                    PublishControlMode("nav2");
-                }
-            }
+            // ── Control mode: no idle return to nav2 (explicit button / goal) ─
+            if (hasInput) _noInputTimer = 0f;
+            else _noInputTimer += Time.deltaTime;
+            _mode.DeploymentKind = NavGoalSession.Active.DeploymentKind;
+            _mode.SchemeIdleMode = "nav2";
+            NavStickHandover.Apply(
+                _mode,
+                NavGoalSession.Active,
+                RosBridgeLink.Instance,
+                RobotConfig.TOPIC_CONTROL_MODE,
+                hasInput,
+                Time.deltaTime);
 
             // ── Publish timer ────────────────────────────────────────────────
             _publishTimer += Time.deltaTime;
@@ -165,12 +157,5 @@ namespace OmniBot.VR.Input
             return sign * Mathf.Clamp01(scaled);
         }
 
-        /// <summary>Publishes a control_mode string to the robot.</summary>
-        private static void PublishControlMode(string mode)
-        {
-            var msg = new StringMsg(mode);
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CONTROL_MODE, msg);
-            Debug.Log($"[BaseController] control_mode → {mode}");
-        }
     }
 }
