@@ -6,7 +6,10 @@ namespace OmniBot.VR.Video
     /// <summary>
     /// Baseline sequential JPEG (SOF0 / SOF1) to top-down RGB24.
     /// No Unity API, so a worker thread can run it. One instance is not thread-safe;
-    /// each stream keeps its own. This is the path <c>web_video_server</c> produces
+    /// each stream keeps its own. Quant tables, Huffman tables, component slots,
+    /// and the RGB/plane buffers are reused across frames.
+    /// <see cref="GrowthCount"/> increments only when one of those buffers has to
+    /// grow. This is the path <c>web_video_server</c> produces
     /// (OpenCV / libjpeg baseline, usually 4:2:0). Progressive and arithmetic JPEGs fail.
     /// </summary>
     public sealed class BaselineJpegDecoder
@@ -24,7 +27,11 @@ namespace OmniBot.VR.Video
         private static readonly double[,] Cos = BuildCos();
 
         private readonly HuffmanTable[,] _huff = new HuffmanTable[2, 4];
+        private readonly bool[,] _huffOk = new bool[2, 4];
         private readonly int[][] _quant = new int[4][];
+        private readonly bool[] _quantOk = new bool[4];
+        private readonly int[] _huffCounts = new int[17];
+        private readonly byte[] _huffSymbols = new byte[256];
         private readonly Comp[] _frame = new Comp[4];
         private readonly Comp[] _scan = new Comp[4];
         private readonly int[] _coef = new int[64];
@@ -46,6 +53,20 @@ namespace OmniBot.VR.Video
         private int _dri;
         private bool _rgb;
         private bool _decoded;
+
+        /// <summary>How many times a reused buffer had to grow. Steady-state decodes stay flat.</summary>
+        public int GrowthCount { get; private set; }
+
+        public BaselineJpegDecoder()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                _frame[i] = new Comp();
+                _quant[i] = new int[64];
+                _huff[0, i] = new HuffmanTable();
+                _huff[1, i] = new HuffmanTable();
+            }
+        }
 
         /// <summary>
         /// Decode <paramref name="jpeg"/>. <paramref name="rgb"/> is top-down RGB24
@@ -70,7 +91,10 @@ namespace OmniBot.VR.Video
                     throw new InvalidDataException("no image");
                 int bytes = _width * _height * 3;
                 if (rgb == null || rgb.Length < bytes)
+                {
                     rgb = new byte[bytes];
+                    GrowthCount++;
+                }
                 WriteRgb(rgb);
                 width = _width;
                 height = _height;
@@ -114,10 +138,10 @@ namespace OmniBot.VR.Video
             _decoded = false;
             for (int i = 0; i < 4; i++)
             {
-                _quant[i] = null;
-                _huff[0, i] = null;
-                _huff[1, i] = null;
-                _frame[i] = null;
+                _quantOk[i] = false;
+                _huffOk[0, i] = false;
+                _huffOk[1, i] = false;
+                _frame[i].Dc = 0;
                 _scan[i] = null;
             }
         }
@@ -186,7 +210,7 @@ namespace OmniBot.VR.Video
             _maxV = 1;
             for (int i = 0; i < _nComp; i++)
             {
-                var c = new Comp();
+                Comp c = _frame[i];
                 c.Id = _data[p++];
                 int hv = _data[p++];
                 c.H = hv >> 4;
@@ -211,7 +235,7 @@ namespace OmniBot.VR.Video
                 int id = info & 15;
                 if (id > 3 || (precision != 0 && precision != 1))
                     throw new InvalidDataException("bad quant table");
-                var natural = new int[64];
+                int[] natural = _quant[id];
                 for (int i = 0; i < 64; i++)
                 {
                     int qv;
@@ -228,7 +252,7 @@ namespace OmniBot.VR.Video
                     }
                     natural[ZigZag[i]] = qv;
                 }
-                _quant[id] = natural;
+                _quantOk[id] = true;
             }
         }
 
@@ -241,19 +265,19 @@ namespace OmniBot.VR.Video
                 int cls = info >> 4;
                 int id = info & 15;
                 if (cls > 1 || id > 3) throw new InvalidDataException("bad huffman table");
-                var counts = new int[17];
+                Array.Clear(_huffCounts, 0, _huffCounts.Length);
                 int total = 0;
                 for (int len = 1; len <= 16; len++)
                 {
                     if (p >= end) throw new InvalidDataException("truncated huffman table");
-                    counts[len] = _data[p++];
-                    total += counts[len];
+                    _huffCounts[len] = _data[p++];
+                    total += _huffCounts[len];
                 }
                 if (total > 256 || p + total > end) throw new InvalidDataException("bad huffman symbols");
-                var symbols = new byte[total];
-                Buffer.BlockCopy(_data, p, symbols, 0, total);
+                if (total > 0) Buffer.BlockCopy(_data, p, _huffSymbols, 0, total);
                 p += total;
-                _huff[cls, id] = HuffmanTable.Build(counts, symbols);
+                _huff[cls, id].Fill(_huffCounts, _huffSymbols, total);
+                _huffOk[cls, id] = true;
             }
         }
 
@@ -301,9 +325,9 @@ namespace OmniBot.VR.Video
                 comp.AcTable = tables & 15;
                 comp.Dc = 0;
                 if (comp.DcTable > 3 || comp.AcTable > 3) throw new InvalidDataException("bad table id");
-                if (_huff[0, comp.DcTable] == null || _huff[1, comp.AcTable] == null)
+                if (!_huffOk[0, comp.DcTable] || !_huffOk[1, comp.AcTable])
                     throw new InvalidDataException("missing huffman table");
-                if (comp.Quant > 3 || _quant[comp.Quant] == null)
+                if (comp.Quant > 3 || !_quantOk[comp.Quant])
                     throw new InvalidDataException("missing quant table");
                 _scan[i] = comp;
             }
@@ -332,7 +356,10 @@ namespace OmniBot.VR.Video
                 c.PlaneH = mcuRows * c.V * 8;
                 int need = c.PlaneW * c.PlaneH;
                 if (_planes[c.Index] == null || _planes[c.Index].Length < need)
+                {
                     _planes[c.Index] = new byte[need];
+                    GrowthCount++;
+                }
             }
 
             int produced = 0;
@@ -521,7 +548,7 @@ namespace OmniBot.VR.Video
                 if (table.MaxCode[len] >= 0 && code >= table.MinCode[len] && code <= table.MaxCode[len])
                 {
                     int idx = table.ValPtr[len] + (code - table.MinCode[len]);
-                    if ((uint)idx >= (uint)table.Symbols.Length)
+                    if ((uint)idx >= (uint)table.SymbolCount)
                         throw new InvalidDataException("huffman symbol out of range");
                     return table.Symbols[idx];
                 }
@@ -606,34 +633,35 @@ namespace OmniBot.VR.Video
             public readonly int[] MinCode = new int[17];
             public readonly int[] MaxCode = new int[17];
             public readonly int[] ValPtr = new int[17];
-            public readonly byte[] Symbols;
+            public byte[] Symbols = new byte[256];
+            public int SymbolCount;
 
-            private HuffmanTable(byte[] symbols) { Symbols = symbols; }
-
-            public static HuffmanTable Build(int[] counts, byte[] symbols)
+            public void Fill(int[] counts, byte[] symbols, int total)
             {
-                var t = new HuffmanTable(symbols);
+                if (Symbols == null || Symbols.Length < total)
+                    Symbols = new byte[total];
+                if (total > 0) Buffer.BlockCopy(symbols, 0, Symbols, 0, total);
+                SymbolCount = total;
                 int code = 0;
                 int si = 0;
                 for (int len = 1; len <= 16; len++)
                 {
                     if (counts[len] == 0)
                     {
-                        t.MinCode[len] = -1;
-                        t.MaxCode[len] = -1;
-                        t.ValPtr[len] = -1;
+                        MinCode[len] = -1;
+                        MaxCode[len] = -1;
+                        ValPtr[len] = -1;
                     }
                     else
                     {
-                        t.MinCode[len] = code;
-                        t.MaxCode[len] = code + counts[len] - 1;
-                        t.ValPtr[len] = si;
+                        MinCode[len] = code;
+                        MaxCode[len] = code + counts[len] - 1;
+                        ValPtr[len] = si;
                         si += counts[len];
                     }
                     code += counts[len];
                     code <<= 1;
                 }
-                return t;
             }
         }
     }

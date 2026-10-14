@@ -35,6 +35,9 @@ namespace OmniBot.VR.Video
         private readonly List<Image> _buttons = new List<Image>();
         private readonly List<LabelRef> _buttonLabels = new List<LabelRef>();
         private LabelRef _stats;
+        private string _statsText = "";
+        private string _pendingStats;
+        private double _statsNotBefore = -1;
         private Image _background;
         private Color _backgroundColor;
         private bool _backgroundDimmed;
@@ -122,8 +125,8 @@ namespace OmniBot.VR.Video
         public void SetStats(string text)
         {
             if (_stats == null || text == null) return;
-            if (_stats.Value == text) return;
-            _stats.Value = text;
+            _pendingStats = text;
+            FlushStats(Time.unscaledTimeAsDouble);
         }
 
         public void Persist()
@@ -158,6 +161,7 @@ namespace OmniBot.VR.Video
 
         private void LateUpdate()
         {
+            FlushStats(Time.unscaledTimeAsDouble);
             if (!_sim || _canvasRect == null || _root == null) return;
             var size = _canvasRect.sizeDelta;
             if (Mathf.Abs(size.x - _builtW) > 0.5f || Mathf.Abs(size.y - _builtH) > 0.5f)
@@ -371,6 +375,9 @@ namespace OmniBot.VR.Video
             var legacy = font == null ? LoadLegacy() : null;
             _stats = AddLabel(back.transform, "No signal", 26f, Color.white, font, legacy);
             _stats.Root = back;
+            _statsText = "No signal";
+            _pendingStats = null;
+            _statsNotBefore = -1;
         }
 
         private SimScreenPoseState Capture()
@@ -476,20 +483,20 @@ namespace OmniBot.VR.Video
             {
                 var tmp = go.AddComponent<TextMeshProUGUI>();
                 tmp.font = font;
-                tmp.text = text;
                 tmp.fontSize = size;
                 tmp.color = color;
                 tmp.alignment = TextAlignmentOptions.Center;
                 tmp.raycastTarget = false;
+                tmp.richText = false;
                 tmp.enableWordWrapping = false;
                 tmp.overflowMode = TextOverflowModes.Ellipsis;
                 label.Tmp = tmp;
+                label.Value = text;
             }
             else
             {
                 var ui = go.AddComponent<Text>();
                 ui.font = legacy != null ? legacy : LoadLegacy();
-                ui.text = text;
                 ui.fontSize = Mathf.RoundToInt(size);
                 ui.color = color;
                 ui.alignment = TextAnchor.MiddleCenter;
@@ -497,8 +504,23 @@ namespace OmniBot.VR.Video
                 ui.horizontalOverflow = HorizontalWrapMode.Overflow;
                 ui.verticalOverflow = VerticalWrapMode.Overflow;
                 label.Legacy = ui;
+                label.Value = text;
             }
             return label;
+        }
+
+        private void FlushStats(double now)
+        {
+            if (_stats == null || _pendingStats == null) return;
+            if (!OverlayTextGate.ShouldPublish(_statsText, _pendingStats, now, _statsNotBefore))
+            {
+                if (_pendingStats == _statsText) _pendingStats = null;
+                return;
+            }
+            _statsText = _pendingStats;
+            _stats.Value = _pendingStats;
+            _pendingStats = null;
+            _statsNotBefore = now + OverlayTextGate.IntervalSeconds;
         }
 
         private static string ChromeKey(SimScreenPlan plan)
@@ -550,16 +572,14 @@ namespace OmniBot.VR.Video
             public TMP_Text Tmp;
             public Text Legacy;
             public GameObject Root;
+            private string _cached;
             public string Value
             {
-                get
-                {
-                    if (Tmp != null) return Tmp.text;
-                    if (Legacy != null) return Legacy.text;
-                    return "";
-                }
+                get { return _cached ?? ""; }
                 set
                 {
+                    if (value == _cached) return;
+                    _cached = value;
                     if (Tmp != null) Tmp.text = value;
                     else if (Legacy != null) Legacy.text = value;
                 }

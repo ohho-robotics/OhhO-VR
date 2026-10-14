@@ -339,6 +339,40 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
+        public void OverlayGate_SkipsDuplicates_AndThrottlesChanges()
+        {
+            Assert.IsFalse(OverlayTextGate.ShouldPublish("30 fps", "30 fps", 1.0, -1));
+            Assert.IsFalse(OverlayTextGate.ShouldPublish("30 fps", null, 1.0, -1));
+            Assert.IsTrue(OverlayTextGate.ShouldPublish("30 fps", "31 fps", 1.0, -1));
+            Assert.IsFalse(OverlayTextGate.ShouldPublish("30 fps", "31 fps", 1.1, 1.0 + OverlayTextGate.IntervalSeconds));
+            Assert.IsTrue(OverlayTextGate.ShouldPublish("30 fps", "31 fps", 1.2, 1.2));
+            Assert.AreEqual(0.2, OverlayTextGate.IntervalSeconds, 0.0001);
+        }
+
+        [Test]
+        public void ByteScratch_ReusesBuffer_UntilItMustGrow()
+        {
+            byte[] buf = null;
+            byte[] first = ByteScratch.Ensure(ref buf, 8);
+            byte[] second = ByteScratch.Ensure(ref buf, 8);
+            Assert.AreSame(first, second);
+            Assert.AreSame(first, ByteScratch.Ensure(ref buf, first.Length));
+            byte[] grown = ByteScratch.Ensure(ref buf, first.Length + 1);
+            Assert.AreNotSame(first, grown);
+            Assert.GreaterOrEqual(grown.Length, first.Length + 1);
+            bool threw = false;
+            try
+            {
+                ByteScratch.Ensure(ref buf, 0);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                threw = true;
+            }
+            Assert.IsTrue(threw);
+        }
+
+        [Test]
         public void FpsCounter_KeepsOneSecondWindow()
         {
             var counter = new StreamFpsCounter();
@@ -562,6 +596,28 @@ namespace OmniBot.VR.Tests
             Assert.AreEqual(32, qh);
             Near(rgb, qw, 8, 8, 220, 10, 10, 12);
             Near(rgb, qw, 24, 24, 230, 230, 230, 12);
+        }
+
+        [Test]
+        public void Jpeg_SteadyState_DoesNotGrowBuffers()
+        {
+            var decoder = new BaselineJpegDecoder();
+            byte[] red = Convert.FromBase64String(RedJpeg);
+            byte[] rgb = null;
+            Assert.IsTrue(decoder.TryDecode(red, red.Length, ref rgb, out _, out _, out string err), err);
+            int afterRed = decoder.GrowthCount;
+            Assert.Greater(afterRed, 0);
+            Assert.IsTrue(decoder.TryDecode(red, red.Length, ref rgb, out _, out _, out err), err);
+            Assert.AreEqual(afterRed, decoder.GrowthCount);
+
+            byte[] quad = Convert.FromBase64String(QuadJpeg);
+            Assert.IsTrue(decoder.TryDecode(quad, quad.Length, ref rgb, out _, out _, out err), err);
+            int afterQuad = decoder.GrowthCount;
+            Assert.IsTrue(decoder.TryDecode(quad, quad.Length, ref rgb, out int w, out int h, out err), err);
+            Assert.AreEqual(afterQuad, decoder.GrowthCount);
+            Assert.AreEqual(32, w);
+            Assert.AreEqual(32, h);
+            Near(rgb, w, 8, 8, 220, 10, 10, 12);
         }
 
         private static string[] ProfileTopics()
