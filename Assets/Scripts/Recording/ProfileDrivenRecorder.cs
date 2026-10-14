@@ -11,10 +11,10 @@ namespace OmniBot.VR.Recording
 {
     /// <summary>
     /// Profile-driven dataset recorder. It replaces the archived DatasetRecorder
-    /// (Archive/legacy-control), which subscribed to hardcoded OmniBot topics
-    /// (<c>RobotConfig.TOPIC_*</c>) and fixed 6-DOF arm / 3-DOF base arrays. It
-    /// reads the ROS topics and state/action dimensions from the
-    /// <see cref="RobotProfile"/> so it records correctly for <i>any</i> robot:
+    /// (Archive/legacy-control), which subscribed to hard-coded OmniBot topics
+    /// and fixed 6-DOF arm / 3-DOF base arrays. It reads the ROS topics and
+    /// state/action dimensions from the <see cref="RobotProfile"/> so it records
+    /// correctly for <i>any</i> robot:
     /// a drone records base-only obs/actions, a humanoid records dual-arm + base,
     /// an industrial arm records arm-only with no base velocity.
     ///

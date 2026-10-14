@@ -22,6 +22,7 @@ namespace OmniBot.VR.Control.Manip
         private string[] _jointNames;
         private float _gripperOpen;
         private float _gripperClosed;
+        private float _lastGripper;
 
         public bool IsConfigured => _profile != null;
         public bool ArmEnabled => _armEnabled;
@@ -60,9 +61,13 @@ namespace OmniBot.VR.Control.Manip
             if (_publishTimer < _publishInterval) return false;
             _publishTimer -= _publishInterval;
 
-            // Pinch → gripper: 0 = open, 1 = closed
-            float gripper = Mathf.Lerp(_gripperOpen, _gripperClosed, Mathf.Clamp01(rightHand.PinchStrength));
+            // Pinch → gripper: 0 = open, 1 = closed. Cannot jump past the joint step cap.
+            float target = Mathf.Lerp(_gripperOpen, _gripperClosed, Mathf.Clamp01(rightHand.PinchStrength));
+            float gripper = SafetyCaps.ClampJoint(
+                _lastGripper, target, _gripperClosed, _gripperOpen, SafetyCaps.JointStepLimit(_profile));
+            _lastGripper = gripper;
 
+            if (string.IsNullOrEmpty(_profile.Topics.ArmCommands)) return false;
             var msg = new JointStateMsg((string[])_jointNames.Clone(), new[] { gripper });
             link.Publish(_profile.Topics.ArmCommands, msg);
             return true;

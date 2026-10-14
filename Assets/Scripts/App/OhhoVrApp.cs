@@ -1,6 +1,8 @@
 using UnityEngine;
+using OmniBot.VR.Core;
 using OmniBot.VR.Core.Platform;
 using OmniBot.VR.Control;
+using OmniBot.VR.Descriptor;
 using OmniBot.VR.UI;
 using OmniBot.VR.UI.Garage;
 
@@ -47,6 +49,9 @@ namespace OmniBot.VR.App
         [Tooltip("First-run onboarding overlay. Shows control hints on the first teleop session.")]
         [SerializeField] private OnboardingController onboarding;
 
+        private GarageRobot _activeRobot;
+        private RobotDescriptor _descriptor;
+
         private void Awake()
         {
             if (platform == null) platform = OhhoPlatform.Instance;
@@ -64,6 +69,14 @@ namespace OmniBot.VR.App
                 fleetPanelController.RobotPicked += OnRobotPicked;
                 fleetPanelController.QuickResume += OnQuickResume;
             }
+
+            var conn = ConnectionManager.Instance;
+            if (conn != null)
+            {
+                conn.OnRobotDescriptor += OnRobotDescriptor;
+                conn.OnConnectionStateChanged += OnLinkChanged;
+                _descriptor = conn.LatestDescriptor;
+            }
         }
 
         private void OnDisable()
@@ -76,6 +89,28 @@ namespace OmniBot.VR.App
                 fleetPanelController.RobotPicked -= OnRobotPicked;
                 fleetPanelController.QuickResume -= OnQuickResume;
             }
+
+            var conn = ConnectionManager.Instance;
+            if (conn != null)
+            {
+                conn.OnRobotDescriptor -= OnRobotDescriptor;
+                conn.OnConnectionStateChanged -= OnLinkChanged;
+            }
+        }
+
+        private void OnRobotDescriptor(RobotDescriptor descriptor)
+        {
+            _descriptor = descriptor;
+            if (_activeRobot != null && teleopController != null && teleopController.IsTeleopActive)
+                ApplyActiveProfile(showUi: false);
+        }
+
+        private void OnLinkChanged(bool connected)
+        {
+            // Drop the cached document so the next pick does not reuse another robot's
+            // topics. The profile already in teleop stays until a new document arrives,
+            // so a disconnect cannot swap in a higher catalog speed.
+            if (!connected) _descriptor = null;
         }
 
         private void Start()
@@ -137,34 +172,57 @@ namespace OmniBot.VR.App
         private void OnRobotPicked(Core.Platform.GarageRobot robot)
         {
             if (robot == null) return;
-            var profile = RobotProfileFactory.FromGarageRobot(robot);
-            if (profile == null)
-            {
-                Debug.LogWarning($"[OhhoVrApp] Could not build a profile for {robot.DisplayName}.");
-                return;
-            }
-            if (teleopController == null)
-            {
-                Debug.LogWarning("[OhhoVrApp] TeleopController not assigned — cannot start teleop.");
-                return;
-            }
+            _activeRobot = robot;
+            if (!ApplyActiveProfile(showUi: true)) return;
 
-            // Phase 5: apply per-robot calibration (workspace offsets, IK location, velocity caps)
-            var cal = CalibrationManager.Load(profile.RobotId);
-            CalibrationManager.ApplyTo(profile, cal);
-
-            // Save as the last robot for quick-resume
-            var conn = OmniBot.VR.Core.ConnectionManager.Instance;
-            LastRobotStore.Save(profile.RobotId, robot.DisplayName,
+            var conn = ConnectionManager.Instance;
+            string savedId = robot.HardwareModel != null && !string.IsNullOrEmpty(robot.HardwareModel.Id)
+                ? robot.HardwareModel.Id
+                : (teleopController.Profile != null ? teleopController.Profile.RobotId : "");
+            LastRobotStore.Save(
+                savedId,
+                robot.DisplayName,
                 conn != null ? conn.CurrentIp : "192.168.1.101",
                 conn != null ? conn.CurrentPort : 9090);
 
-            teleopController.StartTeleop(profile);
-            ShowTeleop();
-
-            // Phase 5: show onboarding hints on the first session
             if (onboarding != null)
                 onboarding.ShowIfFirstTime(teleopController.DriveHint, teleopController.ManipHint);
+        }
+
+        /// <summary>
+        /// Descriptor wins while connected. The catalog profile is the offline
+        /// fallback and fills topics the descriptor does not name.
+        /// </summary>
+        private bool ApplyActiveProfile(bool showUi)
+        {
+            if (_activeRobot == null) return false;
+            var catalog = RobotProfileFactory.FromGarageRobot(_activeRobot);
+            if (catalog == null)
+            {
+                Debug.LogWarning($"[OhhoVrApp] Could not build a profile for {_activeRobot.DisplayName}.");
+                return false;
+            }
+
+            if (teleopController == null)
+            {
+                Debug.LogWarning("[OhhoVrApp] TeleopController not assigned — cannot start teleop.");
+                return false;
+            }
+
+            var conn = ConnectionManager.Instance;
+            if (_descriptor == null && conn != null)
+                _descriptor = conn.LatestDescriptor;
+
+            var profile = _descriptor != null
+                ? RobotProfileFactory.FromDescriptor(_descriptor, catalog) ?? catalog
+                : catalog;
+
+            string calibrationId = string.IsNullOrEmpty(catalog.RobotId) ? profile.RobotId : catalog.RobotId;
+            var cal = CalibrationManager.Load(calibrationId);
+            CalibrationManager.ApplyTo(profile, cal);
+            teleopController.StartTeleop(profile);
+            if (showUi) ShowTeleop();
+            return true;
         }
 
         /// <summary>

@@ -26,11 +26,18 @@ namespace OmniBot.VR.Control
         /// <summary>Offset added to the workspace origin position (world space).</summary>
         public Vector3Ser workspaceOriginOffset;
 
-        /// <summary>Max linear velocity override (0 = use profile default).</summary>
+        /// <summary>Max linear velocity override (0 = use profile default). Cannot raise the profile cap.</summary>
         public float maxLinVelOverride;
 
-        /// <summary>Max angular velocity override (0 = use profile default).</summary>
+        /// <summary>Max angular velocity override (0 = use profile default). Cannot raise the profile cap.</summary>
         public float maxAngVelOverride;
+
+        /// <summary>
+        /// Optional joint limit overrides, radians. A value may only narrow the
+        /// descriptor (or catalog) range. Null leaves that side unchanged.
+        /// </summary>
+        public float[] jointMinOverride;
+        public float[] jointMaxOverride;
 
         /// <summary>IK location override (-1 = use profile default, 0 = headset, 1 = robot).</summary>
         public int ikLocationOverride = -1;
@@ -87,11 +94,69 @@ namespace OmniBot.VR.Control
             if (profile == null || cal == null) return;
 
             profile.ArmBaseHeight += cal.armBaseHeightOffset;
-            profile.HandWorkspaceRadius *= cal.workspaceRadiusScale;
-            if (cal.maxLinVelOverride > 0f) profile.MaxLinVel = cal.maxLinVelOverride;
-            if (cal.maxAngVelOverride > 0f) profile.MaxAngVel = cal.maxAngVelOverride;
+            if (cal.workspaceRadiusScale > 0f)
+                profile.HandWorkspaceRadius *= cal.workspaceRadiusScale;
+
+            // Speed overrides may only lower the cap that was already on the profile.
+            float linCeiling = profile.MaxLinVel;
+            if (profile.HardMaxLinVel > 0f)
+                linCeiling = Mathf.Min(linCeiling, profile.HardMaxLinVel);
+            if (linCeiling < 0f) linCeiling = 0f;
+            if (profile.MaxLinVel > linCeiling) profile.MaxLinVel = linCeiling;
+            if (cal.maxLinVelOverride > 0f)
+                profile.MaxLinVel = Mathf.Min(cal.maxLinVelOverride, linCeiling);
+            if (profile.MaxLatVel > profile.MaxLinVel)
+                profile.MaxLatVel = profile.MaxLinVel;
+
+            float angCeiling = profile.MaxAngVel;
+            if (profile.HardMaxAngVel > 0f)
+                angCeiling = Mathf.Min(angCeiling, profile.HardMaxAngVel);
+            if (angCeiling < 0f) angCeiling = 0f;
+            if (profile.MaxAngVel > angCeiling) profile.MaxAngVel = angCeiling;
+            if (cal.maxAngVelOverride > 0f)
+                profile.MaxAngVel = Mathf.Min(cal.maxAngVelOverride, angCeiling);
+
+            TightenJoints(profile, cal);
+
             if (cal.ikLocationOverride == 0) profile.IkLocation = IkLocation.Headset;
             else if (cal.ikLocationOverride == 1) profile.IkLocation = IkLocation.Robot;
+        }
+
+        /// <summary>
+        /// Narrow joint limits. An override outside the hard range is pulled back
+        /// to that range, so calibration cannot widen a descriptor joint.
+        /// </summary>
+        private static void TightenJoints(RobotProfile profile, RobotCalibration cal)
+        {
+            if (profile.Joints == null || profile.Joints.Length == 0) return;
+            if (cal.jointMinOverride == null && cal.jointMaxOverride == null) return;
+
+            var hard = profile.HardJoints != null && profile.HardJoints.Length == profile.Joints.Length
+                ? profile.HardJoints
+                : profile.Joints;
+
+            for (int i = 0; i < profile.Joints.Length; i++)
+            {
+                var joint = profile.Joints[i];
+                float hardMin = hard[i].Min;
+                float hardMax = hard[i].Max;
+                float min = joint.Min < hardMin ? hardMin : joint.Min;
+                float max = joint.Max > hardMax ? hardMax : joint.Max;
+                if (cal.jointMinOverride != null && i < cal.jointMinOverride.Length)
+                    min = Mathf.Max(cal.jointMinOverride[i], hardMin);
+                if (cal.jointMaxOverride != null && i < cal.jointMaxOverride.Length)
+                    max = Mathf.Min(cal.jointMaxOverride[i], hardMax);
+                if (min > max)
+                {
+                    min = hardMin;
+                    max = hardMax;
+                }
+
+                float home = joint.Home;
+                if (home < min) home = min;
+                if (home > max) home = max;
+                profile.Joints[i] = new JointSpec(joint.Name, joint.Label, min, max, home);
+            }
         }
 
         /// <summary>Reset calibration for a robot id to defaults.</summary>

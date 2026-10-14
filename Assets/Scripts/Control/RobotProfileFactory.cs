@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
+using OmniBot.VR.Core;
 using OmniBot.VR.Core.Platform;
+using OmniBot.VR.Descriptor;
 
 namespace OmniBot.VR.Control
 {
@@ -61,7 +64,127 @@ namespace OmniBot.VR.Control
 
             var profile = Derive(hw, robot.RobotType, category);
             ApplyFlagshipOverride(profile, modelId, category);
+            SealCatalogCaps(profile);
             return profile;
+        }
+
+        /// <summary>
+        /// Build a profile from a connected robot's latched descriptor. This is
+        /// preferred over <see cref="FromGarageRobot"/> whenever a document has
+        /// been received. <paramref name="catalogFallback"/> supplies fields the
+        /// descriptor does not name (arm command topics, link lengths) for the
+        /// same robot, and any tighter speed it already has is kept.
+        /// Returns the fallback when the descriptor is missing its hard caps —
+        /// missing caps are not treated as unlimited.
+        /// </summary>
+        public static RobotProfile FromDescriptor(RobotDescriptor descriptor)
+            => FromDescriptor(descriptor, null);
+
+        public static RobotProfile FromDescriptor(RobotDescriptor descriptor, RobotProfile catalogFallback)
+        {
+            if (descriptor?.Safety?.Hard == null || descriptor.Drive?.Caps == null || descriptor.Topics == null)
+                return catalogFallback;
+
+            var hard = descriptor.Safety.Hard;
+            var caps = descriptor.Drive.Caps;
+            var drive = ParseDescriptorDrive(descriptor.Drive.Kind);
+            bool fixedBase = drive == DriveKind.FixedBase;
+            bool sameRobot = SameRobot(catalogFallback, descriptor);
+
+            float maxLin = fixedBase ? 0f : Cap(caps.VxMps, hard.MaxVxMps, RobotConfig.MAX_LINEAR_VEL);
+            float maxLat = fixedBase ? 0f : Cap(caps.VyMps, hard.MaxVyMps, RobotConfig.MAX_LINEAR_VEL);
+            float maxAng = fixedBase ? 0f : Cap(caps.WzRadS, hard.MaxWzRadS, RobotConfig.MAX_ANGULAR_VEL);
+            if (!descriptor.Drive.Holonomic) maxLat = 0f;
+
+            if (sameRobot)
+            {
+                maxLin = MinPositive(maxLin, catalogFallback.HardMaxLinVel > 0f
+                    ? catalogFallback.HardMaxLinVel : catalogFallback.MaxLinVel);
+                maxAng = MinPositive(maxAng, catalogFallback.HardMaxAngVel > 0f
+                    ? catalogFallback.HardMaxAngVel : catalogFallback.MaxAngVel);
+                if (descriptor.Drive.Holonomic)
+                    maxLat = MinPositive(maxLat, catalogFallback.HardMaxLatVel > 0f
+                        ? catalogFallback.HardMaxLatVel : catalogFallback.MaxLatVel);
+            }
+
+            var joints = JointsFromDescriptor(descriptor);
+            if (sameRobot && catalogFallback.HardJoints != null &&
+                catalogFallback.HardJoints.Length == joints.Length)
+            {
+                joints = IntersectJoints(joints, catalogFallback.HardJoints);
+            }
+
+            var spec = DriveSpecs.Get(drive);
+            bool hasArm = joints.Length > 0;
+            var topics = TopicsFromDescriptor(descriptor, fixedBase);
+            if (sameRobot && catalogFallback.Topics != null)
+                CopyCatalogOnlyTopics(topics, catalogFallback.Topics);
+
+            float[] linkLengths = null;
+            float armBase = 0f;
+            float armReach = 0f;
+            float workspace = HandWorkspaceRadius;
+            var ik = IkLocation.Headset;
+            if (sameRobot)
+            {
+                linkLengths = catalogFallback.ArmLinkLengths;
+                armBase = catalogFallback.ArmBaseHeight;
+                armReach = catalogFallback.ArmMaxReach;
+                if (catalogFallback.HandWorkspaceRadius > 0f)
+                    workspace = catalogFallback.HandWorkspaceRadius;
+                ik = catalogFallback.IkLocation;
+            }
+
+            if (hasArm && (linkLengths == null || linkLengths.Length == 0) && IsSo101(descriptor))
+            {
+                linkLengths = (float[])So101LinkLengths.Clone();
+                armBase = So101BaseHeight;
+                armReach = So101Link1 + So101Link2 + So101Link3;
+            }
+
+            return new RobotProfile
+            {
+                RobotId = descriptor.Id,
+                Name = descriptor.Model,
+                Manufacturer = sameRobot ? catalogFallback.Manufacturer : "",
+                Category = sameRobot ? catalogFallback.Category : "",
+                Drive = drive,
+                DriveLabel = spec.Label,
+                Holonomic = descriptor.Drive.Holonomic && !fixedBase,
+                BaseDof = fixedBase ? 0 : spec.BaseDof,
+                BaseActionLabels = spec.ActionLabels,
+                MaxLinVel = maxLin,
+                MaxLatVel = maxLat,
+                MaxAngVel = maxAng,
+                HardMaxLinVel = maxLin,
+                HardMaxLatVel = maxLat,
+                HardMaxAngVel = maxAng,
+                HardMaxAccelLin = fixedBase ? 0f : Cap(
+                    Math.Min(hard.MaxAccelXMps2, hard.MaxAccelYMps2),
+                    Math.Min(hard.MaxAccelXMps2, hard.MaxAccelYMps2),
+                    DescriptorCeilings.MaxAccelLinMps2),
+                HardMaxAccelYaw = fixedBase ? 0f : Cap(hard.MaxAccelWzRadS2, hard.MaxAccelWzRadS2, DescriptorCeilings.MaxAccelYawRadS2),
+                HardMaxJointStep = Cap(hard.MaxJointStepRad, hard.MaxJointStepRad, DescriptorCeilings.MaxJointStepRad),
+                HasArm = hasArm,
+                ArmDof = joints.Length,
+                Joints = joints,
+                HardJoints = CloneJoints(joints),
+                CanNavigate = !fixedBase && spec.BaseDof > 0,
+                CanManipulate = hasArm,
+                IsAerial = false,
+                IsUnderwater = sameRobot && catalogFallback.IsUnderwater,
+                IsStationary = fixedBase || spec.BaseDof == 0,
+                IsLegged = drive == DriveKind.Quadruped || drive == DriveKind.Bipedal,
+                IsDualArm = descriptor.Arms != null && descriptor.Arms.Length > 1,
+                IkLocation = ik,
+                Topics = topics,
+                HandWorkspaceRadius = workspace,
+                ArmBaseHeight = armBase,
+                ArmMaxReach = armReach,
+                ArmLinkLengths = linkLengths,
+                CapsFromDescriptor = true,
+                UrdfUrl = descriptor.UrdfUrl,
+            };
         }
 
         // ── Derivation (mirrors deriveRobotConfig) ──────────────────────────────
@@ -129,10 +252,13 @@ namespace OmniBot.VR.Control
             {
                 CmdVel        = baseDof > 0 ? "/cmd_vel/teleop" : "",
                 ControlMode   = "/control_mode",
+                ControlModeActive = "/control_mode/active",
                 ArmCommands   = hasArm ? "/arm/joint_commands" : "",
                 ArmEnable     = hasArm ? "/arm/enable" : "",
                 EmergencyStop = "/emergency_stop",
                 IkTargetPose  = hasArm ? "/servo_server/target_pose" : "",
+                RecordStart   = "/vr/record_start",
+                RecordStop    = "/vr/record_stop",
                 Odom          = baseDof > 0 ? "/odom" : "",
                 Imu           = "/imu/data",
                 JointStates   = jointStates,
@@ -235,6 +361,181 @@ namespace OmniBot.VR.Control
             for (int i = 0; i < n; i++)
                 outJ[i] = new JointSpec($"joint_{i + 1}", i < labels.Length ? labels[i] : $"J{i + 1}", -3.14f, 3.14f, 0f);
             return outJ;
+        }
+
+        // ── Descriptor helpers ────────────────────────────────────────────────────
+
+        private static void SealCatalogCaps(RobotProfile profile)
+        {
+            if (profile == null) return;
+            profile.HardMaxLinVel = profile.MaxLinVel;
+            profile.MaxLatVel = profile.Holonomic ? profile.MaxLinVel : 0f;
+            profile.HardMaxLatVel = profile.MaxLatVel;
+            profile.HardMaxAngVel = profile.MaxAngVel;
+            if (profile.HardMaxJointStep <= 0f)
+                profile.HardMaxJointStep = (float)DescriptorCeilings.MaxJointStepRad;
+            profile.HardJoints = CloneJoints(profile.Joints);
+            profile.CapsFromDescriptor = false;
+        }
+
+        private static bool SameRobot(RobotProfile catalog, RobotDescriptor descriptor)
+        {
+            if (catalog == null || descriptor == null || string.IsNullOrEmpty(catalog.RobotId))
+                return false;
+            if (string.Equals(catalog.RobotId, descriptor.Id, StringComparison.OrdinalIgnoreCase))
+                return true;
+            return descriptor.Id == "omnibot" &&
+                   (catalog.RobotId == "omnibot" || catalog.RobotId == "omnibot-pro");
+        }
+
+        private static DriveKind ParseDescriptorDrive(string kind)
+        {
+            switch (kind)
+            {
+                case "mecanum": return DriveKind.Mecanum;
+                case "differential": return DriveKind.Differential;
+                case "ackermann": return DriveKind.Ackermann;
+                case "skid-steer": return DriveKind.SkidSteer;
+                case "tracked": return DriveKind.Tracked;
+                case "quadruped": return DriveKind.Quadruped;
+                case "bipedal": return DriveKind.Bipedal;
+                case "fixed-base": return DriveKind.FixedBase;
+                default: return DriveKind.Unknown;
+            }
+        }
+
+        private static float Cap(double advertised, double hard, double ceiling)
+        {
+            double value = advertised;
+            if (hard < value) value = hard;
+            if (ceiling < value) value = ceiling;
+            if (value < 0 || double.IsNaN(value) || double.IsInfinity(value)) value = 0;
+            // Snap values that sit on a ceiling so a binary 0.2 cannot round above the cap.
+            if (ceiling - value <= 1e-6) return (float)ceiling;
+            return (float)value;
+        }
+
+        private static float MinPositive(float value, float other)
+        {
+            if (other > 0f && other < value) return other;
+            return value;
+        }
+
+        private static JointSpec[] JointsFromDescriptor(RobotDescriptor descriptor)
+        {
+            if (descriptor.Arms == null || descriptor.Arms.Length == 0)
+                return Array.Empty<JointSpec>();
+
+            int count = 0;
+            foreach (var arm in descriptor.Arms)
+                if (arm?.Joints != null) count += arm.Joints.Length;
+
+            var joints = new JointSpec[count];
+            int index = 0;
+            foreach (var arm in descriptor.Arms)
+            {
+                if (arm?.Joints == null) continue;
+                foreach (var joint in arm.Joints)
+                {
+                    float min = (float)joint.Min;
+                    float max = (float)joint.Max;
+                    if (min > max)
+                    {
+                        float swap = min;
+                        min = max;
+                        max = swap;
+                    }
+
+                    float home = MathfClamp((float)joint.Home, min, max);
+                    joints[index++] = new JointSpec(joint.Name, joint.Label, min, max, home);
+                }
+            }
+
+            return joints;
+        }
+
+        private static JointSpec[] IntersectJoints(JointSpec[] descriptorJoints, JointSpec[] tighter)
+        {
+            var result = new JointSpec[descriptorJoints.Length];
+            for (int i = 0; i < descriptorJoints.Length; i++)
+            {
+                var joint = descriptorJoints[i];
+                float min = joint.Min;
+                float max = joint.Max;
+                if (i < tighter.Length)
+                {
+                    if (tighter[i].Min > min) min = tighter[i].Min;
+                    if (tighter[i].Max < max) max = tighter[i].Max;
+                    if (min > max)
+                    {
+                        min = tighter[i].Min;
+                        max = tighter[i].Max;
+                    }
+                }
+
+                float home = MathfClamp(joint.Home, min, max);
+                result[i] = new JointSpec(joint.Name, joint.Label, min, max, home);
+            }
+
+            return result;
+        }
+
+        private static JointSpec[] CloneJoints(JointSpec[] joints)
+        {
+            if (joints == null || joints.Length == 0) return Array.Empty<JointSpec>();
+            var copy = new JointSpec[joints.Length];
+            Array.Copy(joints, copy, joints.Length);
+            return copy;
+        }
+
+        private static RobotTopics TopicsFromDescriptor(RobotDescriptor descriptor, bool fixedBase)
+        {
+            var images = new List<string>();
+            if (descriptor.Topics.Images != null)
+                images.AddRange(descriptor.Topics.Images);
+
+            return new RobotTopics
+            {
+                // fixed-base must not be commanded, even if the document names a cmd topic.
+                CmdVel = fixedBase ? "" : descriptor.Topics.Cmd,
+                EmergencyStop = descriptor.Topics.Estop,
+                Odom = descriptor.Topics.State,
+                Heartbeat = descriptor.Topics.Heartbeat,
+                Telemetry = descriptor.Topics.Telemetry,
+                Images = images,
+            };
+        }
+
+        private static void CopyCatalogOnlyTopics(RobotTopics target, RobotTopics catalog)
+        {
+            target.ControlMode = catalog.ControlMode;
+            target.ControlModeActive = catalog.ControlModeActive;
+            target.ArmCommands = catalog.ArmCommands;
+            target.ArmEnable = catalog.ArmEnable;
+            target.IkTargetPose = catalog.IkTargetPose;
+            target.Imu = catalog.Imu;
+            target.JointStates = catalog.JointStates;
+            target.RecordStart = catalog.RecordStart;
+            target.RecordStop = catalog.RecordStop;
+        }
+
+        private static bool IsSo101(RobotDescriptor descriptor)
+        {
+            if (descriptor.Arms == null) return false;
+            foreach (var arm in descriptor.Arms)
+            {
+                if (arm != null && string.Equals(arm.Name, "so101", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static float MathfClamp(float value, float min, float max)
+        {
+            if (value < min) return min;
+            if (value > max) return max;
+            return value;
         }
     }
 }

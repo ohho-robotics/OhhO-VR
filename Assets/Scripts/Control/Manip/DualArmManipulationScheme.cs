@@ -151,13 +151,28 @@ namespace OmniBot.VR.Control.Manip
             localTarget -= armBaseLocal;
 
             float[] newAngles = solver.Solve(localTarget, currentAngles);
+            float step = SafetyCaps.JointStepLimit(profile);
 
-            // Gripper from pinch (last joint)
-            if (newAngles.Length > 0 && profile.Joints.Length > 0)
+            // Gripper from pinch (last joint), then keep every joint inside the step cap.
+            if (newAngles.Length > 0 && profile.Joints != null && profile.Joints.Length > 0)
             {
                 int last = newAngles.Length - 1;
                 var grip = profile.Joints[profile.Joints.Length - 1];
-                newAngles[last] = Mathf.Lerp(grip.Max, grip.Min, Mathf.Clamp01(hand.PinchStrength));
+                float prev = currentAngles != null && last < currentAngles.Length ? currentAngles[last] : newAngles[last];
+                newAngles[last] = SafetyCaps.ClampJoint(
+                    prev,
+                    Mathf.Lerp(grip.Max, grip.Min, Mathf.Clamp01(hand.PinchStrength)),
+                    grip.Min,
+                    grip.Max,
+                    step);
+            }
+
+            for (int i = 0; i < newAngles.Length; i++)
+            {
+                if (i == newAngles.Length - 1 && profile.Joints != null && profile.Joints.Length > 0)
+                    continue;
+                float prev = currentAngles != null && i < currentAngles.Length ? currentAngles[i] : newAngles[i];
+                newAngles[i] = SafetyCaps.ClampJoint(prev, newAngles[i], float.NegativeInfinity, float.PositiveInfinity, step);
             }
 
             return newAngles;

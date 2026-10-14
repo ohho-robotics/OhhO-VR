@@ -62,15 +62,15 @@ namespace OmniBot.VR.Recording
         {
             // Subscribe to ROSBridge topics for observations
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ARM_STATES, "sensor_msgs/JointState", OnArmState);
+                "/arm/joint_states", "sensor_msgs/JointState", OnArmState);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ODOM, "nav_msgs/Odometry", OnOdom);
+                "/odom", "nav_msgs/Odometry", OnOdom);
             // Subscribe to outgoing command topics for action recording
             // (We eavesdrop on the same topics we publish to)
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_CMD_VEL, "geometry_msgs/Twist", OnCmdVel);
+                "/cmd_vel/teleop", "geometry_msgs/Twist", OnCmdVel);
             ROSBridgeClient.Instance.Subscribe(
-                RobotConfig.TOPIC_ARM_COMMANDS, "sensor_msgs/JointState", OnArmCommands);
+                "/arm/joint_commands", "sensor_msgs/JointState", OnArmCommands);
 
             // Listen to EpisodeManager events
             EpisodeManager.Instance.OnEpisodeStarted  += OnEpisodeStarted;

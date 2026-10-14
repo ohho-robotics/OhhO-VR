@@ -1,32 +1,12 @@
 namespace OmniBot.VR.Core
 {
     /// <summary>
-    /// Compile-time constants for OmniBot VR: topic names, physical limits,
-    /// arm geometry, and hand-tracking workspace parameters.
+    /// Physical limits and arm geometry. Topic names are not constants:
+    /// connected robots take them from the latched RobotDescriptor, and offline
+    /// browsing takes them from the catalog profile.
     /// </summary>
     public static class RobotConfig
     {
-        // ── Publish topic names ──────────────────────────────────────────────
-        public const string TOPIC_CMD_VEL         = "/cmd_vel/teleop";
-        public const string TOPIC_CONTROL_MODE    = "/control_mode";
-        public const string TOPIC_ARM_COMMANDS    = "/arm/joint_commands";
-        public const string TOPIC_ARM_ENABLE      = "/arm/enable";
-        public const string TOPIC_EMERGENCY_STOP  = "/emergency_stop";
-        public const string TOPIC_MISSION_COMMAND = "/mission/command";
-        public const string TOPIC_AI_COMMAND      = "/ai/command";
-        public const string TOPIC_VR_RECORD_START = "/vr/record_start";
-        public const string TOPIC_VR_RECORD_STOP  = "/vr/record_stop";
-
-        // ── Subscribe topic names ────────────────────────────────────────────
-        public const string TOPIC_ODOM                = "/odom";
-        public const string TOPIC_IMU                 = "/imu/data";
-        public const string TOPIC_ARM_STATES          = "/arm/joint_states";
-        public const string TOPIC_MISSION_STATUS      = "/mission/status";
-        public const string TOPIC_AI_STATUS           = "/ai/status";
-        public const string TOPIC_AI_RESPONSE_NEEDED  = "/ai/response_needed";
-        public const string TOPIC_CONTROL_MODE_ACTIVE = "/control_mode/active";
-        public const string TOPIC_ARM_MODE_ACTIVE     = "/arm/cmd_mode/active";
-
         // ── Physical limits ──────────────────────────────────────────────────
         /// <summary>Maximum base linear velocity in m/s.</summary>
         public const float MAX_LINEAR_VEL  = 0.2f;
