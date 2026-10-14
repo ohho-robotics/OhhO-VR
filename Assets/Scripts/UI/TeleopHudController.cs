@@ -217,7 +217,13 @@ namespace OmniBot.VR.UI
                     var sb = new System.Text.StringBuilder();
                     int n = Mathf.Min(_latestArm.position.Length, 6);
                     for (int i = 0; i < n; i++)
-                        sb.Append(_latestArm.position[i].ToString("F2")).Append(i < n - 1 ? "  " : "");
+                    {
+                        string joint = _latestArm.name != null && i < _latestArm.name.Length && !string.IsNullOrEmpty(_latestArm.name[i])
+                            ? _latestArm.name[i]
+                            : "j" + (i + 1);
+                        sb.Append(joint).Append(' ').Append(_latestArm.position[i].ToString("F2"));
+                        if (i < n - 1) sb.Append('\n');
+                    }
                     armText.text = sb.ToString();
                 }
                 else armText.text = "no arm data";

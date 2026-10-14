@@ -79,7 +79,7 @@ namespace OmniBot.VR.Control
 
         private void Update()
         {
-            if (!_teleopActive || !Link.IsConnected) return;
+            if (!_teleopActive) return;
 
             // ── Build the controller input snapshot ──────────────────────────────
             Vector2 leftStick = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
@@ -90,6 +90,9 @@ namespace OmniBot.VR.Control
             bool rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger, OVRInput.Controller.RTouch) ||
                              OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger, OVRInput.Controller.RTouch) > 0.8f;
             bool bothGrips = leftGrip && rightGrip;
+            BothGripsHeld = bothGrips;
+            AnyGripHeld = leftGrip || rightGrip;
+            if (!Link.IsConnected) return;
 
             var input = new TeleopInput
             {
@@ -164,6 +167,74 @@ namespace OmniBot.VR.Control
 
         /// <summary>Whether a robot is currently being teleoperated.</summary>
         public bool IsTeleopActive => _teleopActive;
+
+        /// <summary>Both grips are down this frame (the grip e-stop input).</summary>
+        public bool BothGripsHeld { get; private set; }
+
+        /// <summary>Either grip is down this frame. Display-only deadman readout.</summary>
+        public bool AnyGripHeld { get; private set; }
+
+        /// <summary>Grip e-stop is currently holding the drive scheme.</summary>
+        public bool IsGripEStopActive => _drive is DriveSchemeBase scheme && scheme.IsEmergencyStopActive;
+
+        /// <summary>
+        /// Point the live feed at the operate sim slot. Stops the previous feed
+        /// so a hidden side screen does not keep streaming.
+        /// </summary>
+        public void AttachCameraFeed(CameraFeedController feed)
+        {
+            if (feed == null) return;
+            if (cameraFeed != null && cameraFeed != feed) cameraFeed.StopFeed();
+            cameraFeed = feed;
+            if (Profile != null) feed.Configure(Profile);
+        }
+
+        /// <summary>
+        /// Publish a control-mode string. Refuses while an e-stop is latched so
+        /// nav2 or policy cannot start under a stop.
+        /// </summary>
+        public void RequestOperateMode(string mode)
+        {
+            if (!OperateSafetyRules.ModePublishAllowed(OperateSafetyLatch.UiEStopLatched, IsGripEStopActive))
+                return;
+            if (string.IsNullOrEmpty(mode) || Profile?.Topics == null) return;
+            if (string.IsNullOrEmpty(Profile.Topics.ControlMode) || !Link.IsConnected) return;
+            Link.Publish(Profile.Topics.ControlMode, new StringMsg(mode));
+        }
+
+        /// <summary>Latch e-stop from the operate bar and zero velocity.</summary>
+        public void LatchOperateEStop()
+        {
+            OperateSafetyLatch.Latch();
+            if (Profile?.Topics == null || !Link.IsConnected) return;
+            if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                Link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
+            if (!string.IsNullOrEmpty(Profile.Topics.CmdVel))
+                Link.Publish(Profile.Topics.CmdVel, new TwistMsg(new Vector3Msg(0f, 0f, 0f), new Vector3Msg(0f, 0f, 0f)));
+        }
+
+        /// <summary>
+        /// Clear the operate-bar latch. Does nothing while both grips are held,
+        /// and does not publish a mode change.
+        /// </summary>
+        public bool TryResetOperateEStop()
+        {
+            if (BothGripsHeld) return false;
+            bool schemeStopped = IsGripEStopActive;
+            bool wasLatched = OperateSafetyLatch.UiEStopLatched || schemeStopped;
+            OperateSafetyLatch.Clear();
+            if (!wasLatched) return true;
+            if (_drive is DriveSchemeBase scheme)
+                scheme.ReleaseUiStop(Link, gripHeld: false);
+            else if (Profile?.Topics != null && Link.IsConnected)
+            {
+                if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    Link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
+                if (!string.IsNullOrEmpty(Profile.Topics.CmdVel))
+                    Link.Publish(Profile.Topics.CmdVel, new TwistMsg(new Vector3Msg(0f, 0f, 0f), new Vector3Msg(0f, 0f, 0f)));
+            }
+            return true;
+        }
 
         // ── Input helpers ─────────────────────────────────────────────────────────
 

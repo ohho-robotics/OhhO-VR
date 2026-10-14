@@ -3,6 +3,7 @@ using OmniBot.VR.Core.Platform;
 using OmniBot.VR.Control;
 using OmniBot.VR.UI;
 using OmniBot.VR.UI.Garage;
+using OmniBot.VR.UI.Operate;
 
 namespace OmniBot.VR.App
 {
@@ -106,10 +107,29 @@ namespace OmniBot.VR.App
         public void ShowLogin() => Activate(login: true, console: false, garage: false, teleop: false);
         public void ShowConsole() => Activate(login: false, console: true, garage: false, teleop: false);
         public void ShowGarage() => Activate(login: false, console: false, garage: true, teleop: false);
-        public void ShowTeleop() => Activate(login: false, console: false, garage: false, teleop: true, camera: true, controls: true);
+
+        /// <summary>
+        /// Open the operate dashboard. The side camera and controls canvases stay
+        /// hidden: their feed and legend live on this one forward screen.
+        /// </summary>
+        public void ShowTeleop()
+        {
+            Activate(login: false, console: false, garage: false, teleop: true, camera: false, controls: false);
+            if (teleopPanel == null) return;
+            var dash = OperateDashboard.Ensure(teleopPanel);
+            dash.Bind(teleopController);
+            dash.EnterOperation();
+            if (teleopController != null)
+                teleopController.AttachCameraFeed(dash.SimFeedController);
+        }
 
         private void Activate(bool login, bool console, bool garage, bool teleop, bool camera = false, bool controls = false)
         {
+            if (!teleop && teleopPanel != null)
+            {
+                var dash = teleopPanel.GetComponent<OperateDashboard>();
+                if (dash != null) dash.ExitOperation();
+            }
             if (loginPanel != null) loginPanel.SetActive(login);
             if (consolePanel != null) consolePanel.SetActive(console);
             if (garagePanel != null) garagePanel.SetActive(garage);

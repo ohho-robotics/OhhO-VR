@@ -49,7 +49,7 @@ namespace OmniBot.VR.Video
 
         private void OnDestroy()
         {
-            var conn = OmniBot.VR.Core.ConnectionManager.Instance;
+            var conn = FindObjectOfType<OmniBot.VR.Core.ConnectionManager>();
             if (conn != null) conn.OnRobotIpChanged -= OnRobotIpChanged;
             _activeSource?.Dispose();
         }
@@ -89,6 +89,20 @@ namespace OmniBot.VR.Video
             if (_cameras.Count == 0) return;
             _currentIndex = Mathf.Clamp(index, 0, _cameras.Count - 1);
             StartCurrentCamera();
+        }
+
+        /// <summary>Point the feed at the operate sim slot.</summary>
+        public void AttachDisplay(RawImage image, TMP_Text nameLabel)
+        {
+            if (image != null) displayImage = image;
+            if (nameLabel != null) cameraNameOverlay = nameLabel;
+        }
+
+        /// <summary>Drop the active stream. Used when the operate slot takes over.</summary>
+        public void StopFeed()
+        {
+            _activeSource?.Dispose();
+            _activeSource = null;
         }
 
         // ── Private helpers ────────────────────────────────────────────────────

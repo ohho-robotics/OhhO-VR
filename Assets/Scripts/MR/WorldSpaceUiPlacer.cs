@@ -4,9 +4,9 @@ namespace OmniBot.VR.MR
 {
     /// <summary>
     /// Parks a world-space UI panel in front of the user in mixed reality and,
-    /// optionally, keeps it gently facing them (billboard). Used for the login /
-    /// console / garage panels so they float comfortably in the room over
-    /// passthrough rather than being locked to the head.
+    /// optionally, keeps it gently facing them (billboard). Menus billboard.
+    /// Operate mode calls <see cref="SetBillboardLocked"/> so the screen stays
+    /// put while the user drives; <see cref="Recentre"/> snaps it back to 1.6 m in front.
     ///
     /// A later phase anchors the teleop workspace to a real surface via MRUK; this
     /// is the lightweight "place a floating panel" helper for menus.
@@ -15,13 +15,29 @@ namespace OmniBot.VR.MR
     {
         [SerializeField] private Camera hmdCamera;
         [Tooltip("Metres in front of the user.")]
-        [SerializeField] private float distance = 1.2f;
+        [SerializeField] private float distance = 1.6f;
         [Tooltip("Metres below eye level (panels read better slightly low).")]
         [SerializeField] private float verticalOffset = -0.15f;
         [SerializeField] private bool placeOnEnable = true;
         [SerializeField] private bool billboard = true;
         [Tooltip("How quickly the panel re-faces the user (0 = instant).")]
         [SerializeField] private float billboardLerp = 6f;
+
+        /// <summary>True while operate mode holds the panel still.</summary>
+        public bool IsBillboardLocked { get; private set; }
+
+        /// <summary>Stop billboard follow without disabling the component.</summary>
+        public void SetBillboardLocked(bool locked) => IsBillboardLocked = locked;
+
+        public void SetViewCamera(Camera camera) => hmdCamera = camera;
+
+        public void SetDistance(float metres)
+        {
+            if (metres > 0.05f) distance = metres;
+        }
+
+        /// <summary>Snap in front of the user. Does not unlock a placement lock.</summary>
+        public void Recentre() => PlaceInFront();
 
         private void OnEnable()
         {
@@ -42,15 +58,19 @@ namespace OmniBot.VR.MR
             fwd.Normalize();
 
             transform.position = hmdCamera.transform.position + fwd * distance + Vector3.up * verticalOffset;
-            FaceUser(instant: true);
+            FaceUser(instant: true, deltaTime: 0f);
         }
 
-        private void LateUpdate()
+        private void LateUpdate() => TickBillboard(Time.deltaTime);
+
+        /// <summary>One billboard step. Locked placement leaves rotation where it is.</summary>
+        public void TickBillboard(float deltaTime)
         {
-            if (billboard && hmdCamera != null) FaceUser(instant: false);
+            if (!billboard || IsBillboardLocked || hmdCamera == null) return;
+            FaceUser(instant: false, deltaTime);
         }
 
-        private void FaceUser(bool instant)
+        private void FaceUser(bool instant, float deltaTime)
         {
             if (hmdCamera == null) return;
             Vector3 toCam = transform.position - hmdCamera.transform.position;
@@ -60,7 +80,7 @@ namespace OmniBot.VR.MR
             Quaternion target = Quaternion.LookRotation(toCam.normalized, Vector3.up);
             transform.rotation = instant || billboardLerp <= 0f
                 ? target
-                : Quaternion.Slerp(transform.rotation, target, Time.deltaTime * billboardLerp);
+                : Quaternion.Slerp(transform.rotation, target, deltaTime * billboardLerp);
         }
     }
 }

@@ -34,8 +34,12 @@ namespace OmniBot.VR.Control.Drive
         protected float NoInputTimer;
         protected float NoInputModeTimer;
         protected bool InTeleopMode;
+        private bool _publishEStopClear;
 
         public bool IsConfigured => Profile != null;
+
+        /// <summary>True while a grip stop or the operate-screen latch is holding the base.</summary>
+        public bool IsEmergencyStopActive => EmergencyStopActive;
         public abstract string HudHint { get; }
 
         /// <summary>
@@ -59,14 +63,32 @@ namespace OmniBot.VR.Control.Drive
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
             InTeleopMode = false;
+            _publishEStopClear = false;
+        }
+
+        /// <summary>
+        /// Clear a UI-latched stop after <see cref="OperateSafetyLatch"/> is cleared.
+        /// Refuses while the latch is still set or both grips are held, so reset
+        /// cannot release a stop the operator is still asserting.
+        /// </summary>
+        public void ReleaseUiStop(IRobotLink link, bool gripHeld)
+        {
+            if (OperateSafetyLatch.UiEStopLatched || gripHeld) return;
+            EmergencyStopActive = false;
+            _publishEStopClear = true;
+            PublishEStopClear(link);
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
         {
             if (!IsConfigured || Profile == null || !link.IsConnected) return;
 
+            if (_publishEStopClear && !OperateSafetyLatch.UiEStopLatched)
+                PublishEStopClear(link);
+
             // ── Emergency stop: both grips (rising/falling edge) ───────────────
             HandleEmergencyStop(ref input, link);
+            if (HoldUiEStop(link)) return;
             if (EmergencyStopActive) return;
 
             // ── Thumbsticks (dead-zoned) ───────────────────────────────────────
@@ -142,7 +164,8 @@ namespace OmniBot.VR.Control.Drive
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
                 Debug.Log($"[{GetType().Name}] Emergency stop ACTIVATED.");
             }
-            else if (input.BothGripsReleased && EmergencyStopActive)
+            else if (input.BothGripsReleased && EmergencyStopActive
+                     && OperateSafetyRules.GripReleaseClearsStop(OperateSafetyLatch.UiEStopLatched))
             {
                 EmergencyStopActive = false;
                 link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
@@ -179,6 +202,31 @@ namespace OmniBot.VR.Control.Drive
 
         protected void PublishControlMode(string mode, IRobotLink link)
             => link.Publish(Profile.Topics.ControlMode, new StringMsg(mode));
+
+        private bool HoldUiEStop(IRobotLink link)
+        {
+            if (!OperateSafetyLatch.UiEStopLatched) return false;
+            if (!EmergencyStopActive)
+            {
+                EmergencyStopActive = true;
+                if (Profile.Topics != null && !string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
+                if (Profile.Topics != null && !string.IsNullOrEmpty(Profile.Topics.CmdVel))
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+            }
+            return true;
+        }
+
+        private void PublishEStopClear(IRobotLink link)
+        {
+            if (!_publishEStopClear || OperateSafetyLatch.UiEStopLatched) return;
+            if (link == null || !link.IsConnected || Profile?.Topics == null) return;
+            if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
+            if (!string.IsNullOrEmpty(Profile.Topics.CmdVel))
+                link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+            _publishEStopClear = false;
+        }
 
         protected static float ApplyDeadZone(float value)
         {

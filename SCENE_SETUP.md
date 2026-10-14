@@ -9,9 +9,11 @@
 
 The app runs **one unified world-space screen** ("OhhO Screen", 1600×1000 at
 0.001 scale ≈ 1.6 m wide) floating 1.6 m in front of the user over
-passthrough. A `WorldSpaceUiPlacer` keeps it facing the user; the header bar
-(OhhO logo + ohho-robotics.com + Open Website button) is always visible, and
-the four pages route inside it:
+passthrough. Menus use a `WorldSpaceUiPlacer` (1.6 m, billboard on). The
+operate view locks that follow so the dashboard does not drift while driving;
+**Recentre** on the mode bar snaps it back in front. The header bar
+(OhhO logo + ohho-robotics.com + Open Website button) stays on the menu
+screen, and the pages route inside the rig:
 
 ```
 ┌──────────────── OhhO Screen (one canvas, faces the user) ───────────────┐
@@ -20,7 +22,7 @@ the four pages route inside it:
 │ Login page      → email OTP sign-in (Supabase, same account as the site) │
 │ Console page    → VR products from the manifest (today: OhhO Pilot)      │
 │ Garage page     → the user's robots (Supabase user_robots, shared w/web) │
-│ Teleop page     → connection + telemetry │ camera feed │ recording/export│
+│ Operate page    → mode/safety bar, telemetry, sim screen, arm, legend   │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,13 +105,21 @@ One persistent GameObject holding the platform services (each is a singleton):
 - **TeleopController wiring** — `gestureDetector`, `handWorkspaceOrigin`,
   `cameraFeed` (the teleop page's `CameraFeedController`), `recorder`.
 
-### 5a. Teleop page layout
+### 5a. Operate layout
 
-| Column | Contents |
+Shown by `OhhoVrApp.ShowTeleop()`. The side camera and controls canvases stay
+off; the feed and the legend are on this screen. Placement locks
+(`WorldSpaceUiPlacer` billboard and `SmoothHUD` follow) until you leave teleop.
+
+| Region | Contents |
 |---|---|
-| Left | Robot name, connection (IP/port/Connect/Disconnect/status dot), telemetry (pose, velocity, arm, mode), control hints, **< Garage** |
-| Center | Camera feed (`CameraFeedController` → MJPEG; WebRTC is roadmap), camera name, **Next Camera** |
-| Right | Dataset recording (Start / Stop & Save / Discard, live status), **Export to Robot** (POSTs JSONL to the VR bridge at `:8765`) |
+| Top | SIM/REAL, mode, e-stop, deadman, link. Actions: Teleop, Nav2, Policy (confirm), Record, E-Stop (latched), Reset, Recentre |
+| Left | Telemetry (pose, velocity, mode), link connect, drive/arm hints |
+| Centre | Sim screen slot + `CameraFeedController` (OHH-209's curved presenter mounts here when that branch lands) |
+| Right | Arm joint readouts, dataset recording, export |
+| Bottom | Controls legend, **< Garage** |
+
+Body text is at least 0.9° at 1.6 m (canvas scale 0.001) and uses near-white on a near-opaque dark panel so it stays readable in bright passthrough.
 
 ---
 

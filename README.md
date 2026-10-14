@@ -7,13 +7,15 @@ This repository is the **Meta Quest headset client only**. It does not contain t
 Unity application for controlling the OmniBot mecanum-wheel robot and SO-101 arm over ROSBridge (WebSocket, v2 JSON). Primary target: **Meta Quest 3 / 3S**. The camera feed in this repo is **MJPEG**. WebRTC is **roadmap**: `WebRtcVideoSource` does not complete signaling, and `com.unity.webrtc` is not in `Packages/manifest.json`.
 
 The app is a **single unified world-space screen** ("OhhO Screen") that floats
-in front of you in passthrough and always faces you. It is the headset-native
+in front of you in passthrough. It is the headset-native
 front end of **ohho-robotics.com**: the same Supabase account, the same garage
 of robots, the same branding — sign in once and everything is already there.
 
-Flow: **Login → Console (VR products) → Garage (your robots) → Teleop** —
-all inside the one screen. A `WorldSpaceUiPlacer` parks it 1.6 m ahead and
-gently billboards it toward you; press **left-controller B** to hide/show it.
+Flow: **Login → Console (VR products) → Garage (your robots) → Operate**.
+Menus billboard. The operate view is one locked dashboard 1.6 m ahead (sim
+screen in the centre, telemetry on the left, arm joints on the right, mode and
+safety bar on top, controls legend along the bottom) so it does not drift while
+you drive. **Recentre** snaps it back. Press **left-controller B** to hide/show it.
 
 ---
 
@@ -279,6 +281,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── Auth/LoginPanelController.cs
 │   │   │   ├── Console/ConsolePanelController.cs
 │   │   │   ├── Garage/GaragePanelController.cs
+│   │   │   ├── Operate/            # locked operate layout, mode bar, comfort
 │   │   │   ├── TeleopHudController.cs # connection+telemetry+camera+recording+export
 │   │   │   └── ...
 │   │   ├── Video/              # MJPEG camera feed; WebRTC source is roadmap
