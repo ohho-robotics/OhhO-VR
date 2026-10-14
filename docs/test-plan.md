@@ -139,7 +139,7 @@ Copy-Item Tests/PlayMode/Tests $dest\Tests -Recurse
 Copy-Item Tests/PlayMode/Editor $dest\Editor -Recurse
 ```
 
-`EmptySceneSetup` replaces the open scene with an unsaved empty scene before the run, so `scene1` does not start its manifest fetch. Batch mode does not restore the scene. An interactive editor restores the previous scene path after the run. Delete `Assets/OhhoPlayModeTests` when finished. Do not commit it.
+The test runner replaces the open scene with its own empty bootstrap scene before `EmptySceneSetup`, so `scene1` does not start its manifest fetch. That setup must not call `NewScene`; doing so removes `PlaymodeTestsController` and the batch-mode run never finishes. `EmptySceneSetup` only disables XR auto-start for the run, without saving the XR settings asset. The runner restores the previous scene. Delete `Assets/OhhoPlayModeTests` when finished. Do not commit it.
 
 The tests snapshot and restore `auto_connect`, the last-robot PlayerPrefs keys, and `ohho.calibration.omnibot-pro`.
 

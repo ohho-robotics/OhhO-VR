@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using NUnit.Framework;
 using UnityEngine.TestTools;
+using UnityEngine.XR.Management;
 
 namespace OmniBot.VR.PlayModeTests
 {
@@ -18,6 +19,23 @@ namespace OmniBot.VR.PlayModeTests
     public class OperatorFlowPlayModeTests
     {
         [Test]
+        [Timeout(60000)]
+        public void PlayMode_DoesNotStartXrLoader()
+        {
+            var settings = XRGeneralSettings.Instance;
+            if (settings == null)
+            {
+                Assert.Pass("XR general settings were not loaded, so no loader started.");
+            }
+
+            Assert.IsFalse(settings.InitManagerOnStart,
+                "Play-mode tests disable XR auto-start. OpenXR init waits on a headset and the batchmode player never finishes.");
+            var loader = settings.Manager != null ? settings.Manager.activeLoader : null;
+            Assert.IsNull(loader);
+        }
+
+        [Test]
+        [Timeout(60000)]
         public void LoginStub_Garage_Picker_Teleop_EStop_OnFakeLink()
         {
             var result = Run("OmniBot.VR.PlayMode.OperatorFlowHarness", "RunLoginGaragePickerTeleopEStop");
@@ -63,6 +81,7 @@ namespace OmniBot.VR.PlayModeTests
         }
 
         [Test]
+        [Timeout(60000)]
         public void DisconnectedFakeLink_PublishesNothing()
         {
             var result = Run("OmniBot.VR.PlayMode.OperatorFlowHarness", "RunDisconnected");

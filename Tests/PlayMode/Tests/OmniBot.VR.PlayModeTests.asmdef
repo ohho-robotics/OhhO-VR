@@ -2,7 +2,8 @@
     "name": "OmniBot.VR.PlayModeTests",
     "rootNamespace": "OmniBot.VR.PlayModeTests",
     "references": [
-        "UnityEngine.TestRunner"
+        "UnityEngine.TestRunner",
+        "Unity.XR.Management"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

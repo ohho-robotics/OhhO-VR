@@ -18,6 +18,7 @@ namespace OmniBot.VR.PlayModeTests
     public class RosBridgeDockerPlayModeTests
     {
         [UnityTest]
+        [Timeout(60000)]
         public IEnumerator RosBridgeClient_RoundTrip_WhenBrokerUrlSet()
         {
             string url = Environment.GetEnvironmentVariable("OHHO_ROSBRIDGE_URL");

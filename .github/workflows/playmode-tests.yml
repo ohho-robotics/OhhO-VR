@@ -76,11 +76,24 @@ jobs:
           artifactsPath: playmode-test-results
           customParameters: -testFilter OmniBot.VR.PlayModeTests
 
+      # The runner's artifactsPath output is empty when Unity is cancelled, and
+      # upload-artifact then fails with "path" required. Upload the directory
+      # the runner was given, and make sure that directory exists either way.
+      - name: Ensure play-mode artifact directory
+        if: always() && steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: |
+          mkdir -p playmode-test-results
+          if [ -z "$(find playmode-test-results -type f -print -quit)" ]; then
+            printf '%s\n' 'Unity play-mode runner produced no artifacts.' > playmode-test-results/no-results.txt
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always() && steps.secrets.outputs.available == 'true'
         with:
           name: playmode-test-results
-          path: ${{ steps.tests.outputs.artifactsPath }}
+          path: playmode-test-results
+          if-no-files-found: warn
 
   rosbridge-integration:
     runs-on: ubuntu-latest
