@@ -1,0 +1,5 @@
+Generated C# for ohho.telemetry.v1.
+Copied read-only from ohho-sdk branch ohh-201-telemetry-schema
+commit ae1909439092bceac667553ea7f5cfeaf506c4f6
+file generated/csharp/Ohho.Schemas/TelemetryV1.generated.cs
+Do not hand-edit TelemetryV1.generated.cs.
