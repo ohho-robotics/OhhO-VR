@@ -307,6 +307,16 @@ The visionOS port is planned for a future release. Key design decisions:
 
 ---
 
+## Demo clip
+
+The 30–60 second Quest passthrough clip (driving OmniBot and moving the arm) is **pending**. There is no video URL until that file is on YouTube.
+
+Shot list, Meta Quest Developer Hub / `adb` / scrcpy capture, captions, and the upload checklist: [docs/recording/quest-teleop-clip.md](docs/recording/quest-teleop-clip.md).
+
+**Needs Varun: Quest + robot, record and upload.**
+
+---
+
 ## Licence
 
 First-party code in this repository is [Apache License 2.0](LICENSE).

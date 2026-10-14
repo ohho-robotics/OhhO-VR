@@ -27,6 +27,9 @@ Packages/packages-lock.json
 crashlytics-build.log
 sysinfo.txt
 
+# Quest clip captures (OHH-60). The recorder writes here; do not commit footage.
+recordings/
+
 # Generated meta files are intentionally not tracked in this repo
 # Android Build Outputs
 *.apk
