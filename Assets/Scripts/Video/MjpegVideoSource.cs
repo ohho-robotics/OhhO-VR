@@ -3,6 +3,7 @@ using System.Collections;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
+using OmniBot.VR.Latency;
 
 namespace OmniBot.VR.Video
 {
@@ -25,6 +26,9 @@ namespace OmniBot.VR.Video
 
         public string TransportName => "MJPEG";
         public bool IsStreaming => _coroutine != null;
+
+        /// <summary>Unix ms from an <c>OHHO_CAP:</c> marker on the latest frame, if present.</summary>
+        public long? LastCaptureUnixMs { get; private set; }
         public event Action<Texture2D> OnFrame;
         public event Action<string> OnError;
 
@@ -145,6 +149,11 @@ namespace OmniBot.VR.Video
             if (_disposed) return;
             if (_texture == null)
                 _texture = new Texture2D(2, 2, TextureFormat.RGB24, false);
+
+            if (LatencyCapture.IsEnabled)
+                LastCaptureUnixMs = JpegCaptureStamp.TryReadUnixMs(jpegBytes);
+            else
+                LastCaptureUnixMs = null;
 
             if (ImageConversion.LoadImage(_texture, jpegBytes, false))
                 OnFrame?.Invoke(_texture);

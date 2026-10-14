@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using OmniBot.VR.Latency;
 
 namespace OmniBot.VR.Core
 {
@@ -167,6 +168,8 @@ namespace OmniBot.VR.Core
                 // (ROSBridgeClient.Subscribe handles deduplication)
                 ROSBridgeClient.Instance.Subscribe(kvp.Key, kvp.Value, _ => { /* placeholder; actual handlers added by feature scripts */ });
             }
+
+            LatencyCaptureHooks.EnsureCommandAckSubscription();
 
             OnConnectionStateChanged?.Invoke(true);
             OnRobotIpChanged?.Invoke(CurrentIp);

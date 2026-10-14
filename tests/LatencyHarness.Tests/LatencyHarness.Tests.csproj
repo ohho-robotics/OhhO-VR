@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyBudget.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyClock.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyStats.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyJson.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\JpegCaptureStamp.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencySession.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyLog.cs" />
+    <Compile Include="..\..\Assets\Scripts\Latency\LatencyCapture.cs" />
+    <Compile Include="..\..\Assets\Scripts\Core\RobotConfig.cs" />
+    <Compile Include="..\..\Assets\Scripts\Control\IRobotLink.cs" />
+    <Compile Include="..\..\Assets\Scripts\Editor\Latency\FakeRobotLink.cs" />
+    <Compile Include="..\..\Assets\Scripts\Editor\Tests\LatencyHarnessTests.cs" />
+  </ItemGroup>
+</Project>

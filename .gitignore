@@ -27,6 +27,13 @@ Packages/packages-lock.json
 crashlytics-build.log
 sysinfo.txt
 
+# Latency harness test build output. The csproj itself is tracked;
+# other generated csproj files stay ignored by the *.csproj rule above.
+!tests/LatencyHarness.Tests/LatencyHarness.Tests.csproj
+tests/**/bin/
+**/__pycache__/
+*.pyc
+
 # Generated meta files are intentionally not tracked in this repo
 # Android Build Outputs
 *.apk
