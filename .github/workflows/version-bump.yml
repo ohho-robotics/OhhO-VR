@@ -1,0 +1,13 @@
+name: Version bump
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version bump unit tests
+        run: python3 scripts/test_bump_quest_version.py

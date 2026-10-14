@@ -1,0 +1,148 @@
+name: Quest sideload release
+
+# Builds the Quest APK when a version tag is pushed and attaches it to the
+# GitHub Release for that tag.
+#
+# Reuses the GameCI editor image, Unity pin, licence secret names, Library
+# cache, and disk-cleanup step from .github/workflows/unity-tests.yml. The
+# build step is game-ci/unity-builder, the build action paired with the
+# game-ci/unity-test-runner already used for edit-mode tests.
+#
+# GameCI's default versioning is Semantic (git tag plus commit count). This
+# workflow passes ProjectSettings bundleVersion and AndroidBundleVersionCode
+# through instead, so scripts/bump-quest-version.py stays the source of truth.
+#
+# Required Actions secrets (names only; set them in repository settings,
+# never in this file):
+#   UNITY_LICENSE, UNITY_EMAIL, UNITY_PASSWORD
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASS
+#   ANDROID_KEYALIAS_NAME, ANDROID_KEYALIAS_PASS
+#
+# Pull requests do not run this workflow. Pushing a v* tag is what creates
+# the release. See docs/distribution/sideload.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require release secrets
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEYALIAS_NAME: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          ANDROID_KEYALIAS_PASS: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in UNITY_LICENSE UNITY_EMAIL UNITY_PASSWORD ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASS ANDROID_KEYALIAS_NAME ANDROID_KEYALIAS_PASS; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing Actions secret ${name}. See docs/distribution/sideload.md."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - uses: actions/checkout@v4
+
+      - name: Read the version the bump script wrote
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/bump-quest-version.py --print-current)"
+          code="$(python3 scripts/bump-quest-version.py --print-code)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match ProjectSettings bundleVersion ${version}. Run scripts/bump-quest-version.py, commit, and tag v<bundleVersion>."
+            exit 1
+          fi
+          if ! [[ "$code" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::AndroidBundleVersionCode ${code} is not a positive integer."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${version} (Android version code ${code})"
+
+      # The Android editor image is large; free runner disk space before pulling it.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-Android-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: Library-Android-
+
+      - uses: game-ci/unity-builder@v4
+        id: build
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: Android
+          unityVersion: 6000.5.2f1
+          customImage: unityci/editor:ubuntu-6000.5.2f1-android-3
+          buildsPath: build
+          buildName: OhhO-VR
+          androidExportType: androidPackage
+          versioning: Custom
+          version: ${{ steps.version.outputs.version }}
+          androidVersionCode: ${{ steps.version.outputs.code }}
+          androidKeystoreName: ohho-release.keystore
+          androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          androidKeystorePass: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+
+      - name: Find the APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find build -type f -name '*.apk' | sort)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected one APK under build/, found ${#apks[@]}."
+            find build -type f -print || true
+            exit 1
+          fi
+          echo "path=${apks[0]}" >> "$GITHUB_OUTPUT"
+          echo "Found ${apks[0]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quest-apk-${{ github.ref_name }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      - name: Attach the APK to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            Sideload Quest APK for `${{ github.ref_name }}` (version `${{ steps.version.outputs.version }}`, Android version code `${{ steps.version.outputs.code }}`).
+            This is a sideload build. It is not a Meta Horizon Store submission.
+            Install steps are in `docs/distribution/sideload.md` at this tag.
