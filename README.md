@@ -124,7 +124,15 @@ unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmo
 
 Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view expects MJPEG from `web_video_server` on port `8080`. Those processes live on the robot PC. This repo does not ship them.
 
-A **Simulate** session opens the chase camera (`/sim/chase_cam/image_raw`) on a curved world-space screen. A strip switches chase, front, wrist, and BEV, and the wrist camera stays in a picture-in-picture until it is the main view. Drag the screen and resize it with the handle; the pose and size are remembered. JPEG decode runs off the main thread, display is capped at 30 fps, and the overlay shows fps and frame age. The stream URL asks `web_video_server` for `quality` and `width` (main 80 / 960, wrist inset 60 / 320). A real session keeps the profile camera order on the flat panel and still decodes off the main thread.
+A **Simulate** session opens the chase camera (`/sim/chase_cam/image_raw`) on a curved world-space screen. A strip switches chase, front, wrist, and BEV, and the wrist camera stays in a picture-in-picture until it is the main view. Drag the screen and resize it with the handle; the pose and size are remembered. JPEG decode runs off the main thread, display is capped at 30 fps, and the overlay shows fps and frame age. The stream URL asks `web_video_server` for `quality` and `width` (main 80 / 960, wrist inset 60 / 320). A real session keeps the profile camera order on the flat panel and still decodes off the main thread. BEV stays in that order when the profile lists `/camera/base/bev/image_raw` (OmniBot does).
+
+The same BEV topic is drawn as a floor quad under the tabletop twin. If the scene has an object named `OmniBotTwin`, or a component named `TwinView`, the quad parents to it, a few millimetres below the origin, in the twin's scale. Otherwise it sits at desk height (0.72 m) in front of the headset at the 0.25 tabletop scale. The quad is created when teleop starts. It is not a child of the OhhO screen, so hiding the screen does not hide it.
+
+In a sim session the picture is the synthetic top-down camera (2.2 m above `base_link`, 120° horizontal field of view, 960×540) that publishes `/camera/base/bev/image_raw`. On a real robot the same topic is the stitcher output, a square covering ±2 m around the base. The floor stream asks for quality 70 and width 640. Image up is robot forward.
+
+No 2D detector topic is available to draw on the front camera. OmniBot does not publish `vision_msgs/Detection2DArray`. `perception.launch.py` can start `object_perception_node`, which reports metric detections on `/perception/objects`, `/perception/object_info`, `/perception/nearest_distance`, and `/perception/query_result` instead of boxes. The headset leaves the front camera texture unmarked until a `Detection2DArray` topic exists.
+
+Screenshot the floor panel in a sim session and on the real robot. This checkout cannot open Play Mode or a Quest, so those pictures are an operator check.
 
 ---
 

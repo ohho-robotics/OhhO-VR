@@ -32,6 +32,11 @@ namespace OmniBot.VR.Video
         public const string ChaseTopic = "/sim/chase_cam/image_raw";
         public const string FrontTopic = "/camera/front/image_raw";
         public const string WristTopic = "/camera/wrist/image_raw";
+        /// <summary>
+        /// Sim publishes the OHH-200 synthetic top-down camera here. The real
+        /// robot publishes the stitcher on the same topic. The floor panel and
+        /// the BEV camera tab both use it.
+        /// </summary>
         public const string BevTopic = "/camera/base/bev/image_raw";
 
         public const int MainWidth = 960;
@@ -142,6 +147,16 @@ namespace OmniBot.VR.Video
                 }
                 return 0;
             }
+        }
+
+        public int IndexOf(string topic)
+        {
+            if (string.IsNullOrEmpty(topic) || Views == null) return -1;
+            for (int i = 0; i < Views.Count; i++)
+            {
+                if (Views[i].Topic == topic) return i;
+            }
+            return -1;
         }
 
         public static SimScreenPlan Build(SessionKind? kind, IList<string> profileTopics, string host, IList<string> videoUrls)
