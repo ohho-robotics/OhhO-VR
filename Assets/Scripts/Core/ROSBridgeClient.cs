@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using UnityEngine;
 using NativeWebSocket;
 using Newtonsoft.Json;
@@ -47,6 +48,9 @@ namespace OmniBot.VR.Core
         private readonly Dictionary<string, List<Action<string>>> _subscribers
             = new Dictionary<string, List<Action<string>>>();
         private readonly object _subscribersLock = new object();
+        private readonly ConcurrentDictionary<string, Action<bool, string>> _calls
+            = new ConcurrentDictionary<string, Action<bool, string>>();
+        private int _callSeq;
 
         private bool _intentionalDisconnect = false;
         private int _reconnectAttempts = 0;
@@ -120,6 +124,7 @@ namespace OmniBot.VR.Core
         {
             _intentionalDisconnect = true;
             _reconnecting = false;
+            FailPendingCalls("Rosbridge disconnected.");
             if (_socket != null && _socket.State == WebSocketState.Open)
             {
                 await _socket.Close();
@@ -177,6 +182,49 @@ namespace OmniBot.VR.Core
             }
             var unsubMsg = new ROSUnsubscribeMessage(topic);
             SendJson(JsonConvert.SerializeObject(unsubMsg));
+        }
+
+        /// <summary>
+        /// Calls a rosbridge service. The callback runs on the main thread with
+        /// the values JSON, or (false, reason) when the call fails. Used by
+        /// connection preflight (rosapi/topics, rosapi/get_time). This does not
+        /// publish a motion command.
+        /// </summary>
+        public void CallService(string service, string argsJson, Action<bool, string> callback)
+        {
+            if (callback == null) return;
+            if (string.IsNullOrEmpty(service))
+            {
+                callback(false, "Service name is empty.");
+                return;
+            }
+            if (!IsConnected)
+            {
+                callback(false, "Rosbridge is not connected.");
+                return;
+            }
+
+            string id = "ohho-" + Interlocked.Increment(ref _callSeq).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            _calls[id] = callback;
+
+            JObject args;
+            try
+            {
+                args = string.IsNullOrEmpty(argsJson) ? new JObject() : JObject.Parse(argsJson);
+            }
+            catch (Exception)
+            {
+                args = new JObject();
+            }
+
+            var root = new JObject
+            {
+                ["op"] = "call_service",
+                ["id"] = id,
+                ["service"] = service,
+                ["args"] = args,
+            };
+            SendJson(root.ToString(Formatting.None));
         }
 
         // ── Private helpers ──────────────────────────────────────────────────
@@ -251,6 +299,10 @@ namespace OmniBot.VR.Core
                         _incomingQueue.Enqueue((topic, msgJson));
                     }
                 }
+                else if (op == "service_response" || (op == "status" && IsPendingCall(root)))
+                {
+                    _incomingQueue.Enqueue(("__service__", json));
+                }
             }
             catch (Exception ex)
             {
@@ -278,6 +330,11 @@ namespace OmniBot.VR.Core
                 OnError?.Invoke(json);
                 return;
             }
+            if (topic == "__service__")
+            {
+                DispatchService(json);
+                return;
+            }
 
             List<Action<string>> callbacks = null;
             lock (_subscribersLock)
@@ -298,6 +355,57 @@ namespace OmniBot.VR.Core
                         Debug.LogError($"[ROSBridgeClient] Subscriber callback exception on {topic}: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        private bool IsPendingCall(JObject root)
+        {
+            string id = root["id"]?.ToString();
+            return !string.IsNullOrEmpty(id) && _calls.ContainsKey(id);
+        }
+
+        private void DispatchService(string json)
+        {
+            JObject root;
+            try { root = JObject.Parse(json); }
+            catch (Exception) { return; }
+
+            string id = root["id"]?.ToString();
+            if (string.IsNullOrEmpty(id) || !_calls.TryRemove(id, out var callback) || callback == null)
+                return;
+
+            string op = root["op"]?.ToString();
+            if (op == "status")
+            {
+                InvokeCall(callback, false, root["msg"]?.ToString() ?? "rosbridge status error");
+                return;
+            }
+
+            bool ok = true;
+            var result = root["result"];
+            if (result != null && result.Type == JTokenType.Boolean)
+                ok = result.Value<bool>();
+
+            string values = root["values"]?.ToString(Formatting.None) ?? "{}";
+            InvokeCall(callback, ok, ok ? values : values);
+        }
+
+        private void FailPendingCalls(string reason)
+        {
+            var ids = new List<string>(_calls.Keys);
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (_calls.TryRemove(ids[i], out var callback) && callback != null)
+                    InvokeCall(callback, false, reason);
+            }
+        }
+
+        private static void InvokeCall(Action<bool, string> callback, bool ok, string body)
+        {
+            try { callback(ok, body); }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ROSBridgeClient] Service callback exception: {ex.Message}");
             }
         }
 

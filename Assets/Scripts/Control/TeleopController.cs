@@ -1,5 +1,6 @@
 using UnityEngine;
 using OmniBot.VR.Core;
+using OmniBot.VR.Control.Preflight;
 using OmniBot.VR.Input;
 using OmniBot.VR.Video;
 using OmniBot.VR.Recording;
@@ -131,6 +132,16 @@ namespace OmniBot.VR.Control
         public void StartTeleop(RobotProfile profile)
         {
             if (profile == null) { Debug.LogWarning("[TeleopController] StartTeleop called with null profile."); return; }
+
+            // Preflight holds real robots until safety checks pass. Stop publishes
+            // zero velocity through the existing drive path and does not clear an
+            // e-stop, the deadman, or a speed cap.
+            if (PreflightGate.BlocksMotion)
+            {
+                StopTeleop();
+                Debug.LogWarning("[TeleopController] Real teleop stays stopped until connection preflight is clear.");
+                return;
+            }
 
             StopTeleop();
 
