@@ -109,7 +109,7 @@ One persistent GameObject holding the platform services (each is a singleton):
 | Column | Contents |
 |---|---|
 | Left | Robot name, connection (IP/port/Connect/Disconnect/status dot), telemetry (pose, velocity, arm, mode), control hints, **< Garage** |
-| Center | Camera feed (`CameraFeedController` → MJPEG; WebRTC is roadmap), camera name, **Next Camera** |
+| Center | Camera feed (`CameraFeedController` → MJPEG; WebRTC is roadmap), camera name, **Next Camera**. BEV is one of those cameras. The same topic is also a world-space floor quad (`BevFloorPanel`) under `OmniBotTwin` / `TwinView` when that twin is in the scene. The quad is created at teleop start, not saved in `scene1`. |
 | Right | Dataset recording (Start / Stop & Save / Discard, live status), **Export to Robot** (POSTs JSONL to the VR bridge at `:8765`) |
 
 ---
