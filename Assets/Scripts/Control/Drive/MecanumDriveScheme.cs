@@ -11,7 +11,9 @@ namespace OmniBot.VR.Control.Drive
     /// </summary>
     public sealed class MecanumDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => "Left stick: strafe · Right stick X: yaw · Right grip: turbo";
+        public override string HudHint => RequireDeadman
+            ? "Hold grip: drive (deadman) · Left stick: strafe · Right stick X: yaw · Both grips: e-stop"
+            : "Left stick: strafe · Right stick X: yaw · Right grip: turbo · Both grips: e-stop";
 
         protected override TwistMsg ComputeVelocity(
             float lx, float ly, float rx, float ry, float speedMult, out bool hasInput)

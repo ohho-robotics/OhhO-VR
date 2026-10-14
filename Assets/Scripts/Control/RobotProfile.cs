@@ -43,6 +43,7 @@ namespace OmniBot.VR.Control
         public string[] BaseActionLabels;
         public float MaxLinVel;         // m/s
         public float MaxAngVel;         // rad/s
+        public bool RequireDeadman;     // Safety: require grip held to drive; release -> zero velocity
 
         // ── Manipulator ───────────────────────────────────────────────────────
         public bool HasArm;

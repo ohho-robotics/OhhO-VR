@@ -38,6 +38,15 @@ namespace OmniBot.VR.Control.Drive
         public bool IsConfigured => Profile != null;
         public abstract string HudHint { get; }
 
+        /// <summary>True when emergency stop has been activated via both grips or programmatically.</summary>
+        public bool IsEmergencyStopActive => EmergencyStopActive;
+
+        /// <summary>
+        /// When true, a grip must be held to drive (deadman switch). Releasing the grip
+        /// immediately halts motion and publishes zero velocity.
+        /// </summary>
+        public bool RequireDeadman { get; set; }
+
         /// <summary>
         /// Control-mode string published after the idle timeout. Ground robots
         /// revert to "nav2"; aerial/underwater robots can override (e.g. "offboard"
@@ -59,6 +68,16 @@ namespace OmniBot.VR.Control.Drive
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
             InTeleopMode = false;
+            RequireDeadman = profile != null && profile.RequireDeadman;
+        }
+
+        /// <summary>
+        /// Returns true if the deadman switch is engaged (either grip held alone, not both).
+        /// Both grips simultaneously is reserved for Emergency Stop.
+        /// </summary>
+        public virtual bool IsDeadmanEngaged(in TeleopInput input)
+        {
+            return (input.LeftGrip || input.RightGrip) && !input.BothGrips;
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
@@ -67,7 +86,30 @@ namespace OmniBot.VR.Control.Drive
 
             // ── Emergency stop: both grips (rising/falling edge) ───────────────
             HandleEmergencyStop(ref input, link);
-            if (EmergencyStopActive) return;
+            if (EmergencyStopActive)
+            {
+                if (IsPublishing)
+                {
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                    IsPublishing = false;
+                }
+                UpdateControlMode(false, input.DeltaTime, link);
+                return;
+            }
+
+            // ── Deadman grip check ─────────────────────────────────────────────
+            bool deadmanEngaged = !RequireDeadman || IsDeadmanEngaged(input);
+            if (!deadmanEngaged)
+            {
+                // Deadman released: immediately halt base motion and revert control mode
+                if (IsPublishing)
+                {
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                    IsPublishing = false;
+                }
+                UpdateControlMode(false, input.DeltaTime, link);
+                return;
+            }
 
             // ── Thumbsticks (dead-zoned) ───────────────────────────────────────
             float lx = ApplyDeadZone(input.LeftStick.x);
@@ -132,25 +174,60 @@ namespace OmniBot.VR.Control.Drive
 
         // ── Shared helpers ────────────────────────────────────────────────────────
 
+        public void TriggerEmergencyStop(IRobotLink link)
+        {
+            EmergencyStopActive = true;
+            if (link != null && link.IsConnected && Profile?.Topics != null)
+            {
+                if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
+                if (!string.IsNullOrEmpty(Profile.Topics.CmdVel))
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+            }
+            IsPublishing = false;
+            VibrateControllers(1f);
+        }
+
+        public void ClearEmergencyStop(IRobotLink link)
+        {
+            EmergencyStopActive = false;
+            if (link != null && link.IsConnected && Profile?.Topics != null)
+            {
+                if (!string.IsNullOrEmpty(Profile.Topics.EmergencyStop))
+                    link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
+            }
+            VibrateControllers(0f);
+        }
+
         private void HandleEmergencyStop(ref TeleopInput input, IRobotLink link)
         {
             if (input.BothGripsPressed)
             {
-                EmergencyStopActive = true;
-                link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(true));
-                OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.LTouch);
-                OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
+                TriggerEmergencyStop(link);
                 Debug.Log($"[{GetType().Name}] Emergency stop ACTIVATED.");
             }
             else if (input.BothGripsReleased && EmergencyStopActive)
             {
-                EmergencyStopActive = false;
-                link.Publish(Profile.Topics.EmergencyStop, new BoolMsg(false));
-                OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
-                OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
+                ClearEmergencyStop(link);
                 Debug.Log($"[{GetType().Name}] Emergency stop RELEASED.");
             }
             PrevBothGrips = input.BothGrips;
+        }
+
+        private static void VibrateControllers(float amplitude)
+        {
+            try
+            {
+                if (Application.isPlaying)
+                {
+                    OVRInput.SetControllerVibration(amplitude, amplitude, OVRInput.Controller.LTouch);
+                    OVRInput.SetControllerVibration(amplitude, amplitude, OVRInput.Controller.RTouch);
+                }
+            }
+            catch
+            {
+                // Ignored in test runner / headless mode where OVRPlugin is not loaded
+            }
         }
 
         private void UpdateControlMode(bool hasInput, float dt, IRobotLink link)
