@@ -328,7 +328,7 @@ Variants selected from `RobotConfig.capabilities` / `armDof`:
 1. Selection → **OmniBot Pro** → `RobotProfile { drive: "mecanum", holonomic: true, armDof: 6, joints: SO101_JOINTS, rosTopics.cmdVel: "/cmd_vel/teleop", … }`.
 2. Factory → `MecanumDriveScheme` + `HandIK6DOF` (analytic SO-101 solver).
 3. **Base:** left stick → vx/vy strafe, right stick X → yaw → `/cmd_vel/teleop` @ 20 Hz.
-4. **Arm:** right-hand pose → analytic IK → 6 joints → `/arm/joint_commands` @ 20 Hz; pinch → `arm_gripper`. Left-hand thumbs-up toggles arm enable; both grips = e-stop.
+4. **Arm:** explicit enable (Left X or thumbs-up). Real robots publish `/arm/enable` only after a second Left X. The right index trigger is the clutch: motion streams only while it is held, and the first sample matches the held joints. Then analytic IK → `/arm/joint_commands` @ 20 Hz, steps capped at 0.15 rad; pinch → `arm_gripper`. Poor tracking jogs a joint from the right stick. Both grips = e-stop, which also disarms the arm.
 5. All in passthrough: a translucent twin of the SO-101 overlays the real table so the operator previews motion before the real arm catches up.
 
 ---

@@ -5,56 +5,76 @@ using OmniBot.VR.Input;
 namespace OmniBot.VR.Control.Manip
 {
     /// <summary>
-    /// One hand → one 6-DOF arm via IK retargeting — the OmniBot/SO-101 and UR5e
-    /// case. The Quest reports a 6-DOF wrist pose; we retarget it to the arm's
-    /// end-effector, solve IK for the joint angles, and stream
-    /// <c>sensor_msgs/JointState</c> to <c>profile.Topics.ArmCommands</c> at 20 Hz.
-    /// Pinch strength drives the gripper joint.
+    /// One hand → one 6-DOF arm. Joint names, limits, link lengths, and
+    /// kinematic zeros come from <see cref="RobotProfile"/>, which is filled
+    /// from <see cref="RobotDescriptor"/> via <see cref="RobotProfileFactory"/>.
     ///
-    /// Logic extracted from the legacy
-    /// <c>Input/HandTrackingArmController.cs</c>; the only change is joint names,
-    /// limits, link lengths and topics now come from the
-    /// <see cref="RobotProfile"/> instead of <c>RobotConfig</c> constants. The IK
-    /// solver itself (<see cref="ArmIKSolver"/>) is reused unchanged — it is
-    /// SO-101 geometry, which the OmniBot flagship override pins.
+    /// Enable does not move the arm. Sim enables on one explicit request.
+    /// Real stays off until a second confirm, and nothing is published on
+    /// <c>/arm/enable</c> before that. Motion is published only while the
+    /// clutch (right index trigger) is held. The clutch is differential: the
+    /// first command after the trigger closes is the pose already held, then
+    /// the arm follows hand motion. Joint steps never exceed
+    /// <see cref="RobotDescriptor.MaxJointDeltaRad"/>.
+    ///
+    /// When hand tracking is not high confidence, the clutch jogs one joint
+    /// from the right stick instead of solving IK.
+    ///
+    /// TODO(OHH-94): radian homes are the URDF zero until real STS3215 ticks
+    /// are measured. This scheme does not embed servo tick offsets.
     /// </summary>
     public sealed class HandIK6DofScheme : IManipulationScheme
     {
         private const float PublishHz = 20f;
-        private const float ThumbsUpHoldRequired = 0.5f; // s hold to toggle arm enable
+        private const float StillPositionMetres = 0.002f;
+        private const float StillRotationDegrees = 1f;
 
         private RobotProfile _profile;
         private Transform _workspaceOrigin;
         private ArmIKSolver _ikSolver;
+        private readonly ArmSessionGate _gate = new ArmSessionGate();
+        private readonly CartesianSmoother _smoother = new CartesianSmoother();
         private float[] _currentAngles;
         private string[] _jointNames;
         private float[] _jointMin;
         private float[] _jointMax;
-
-        private bool _armEnabled;
+        private float _maxDelta = RobotDescriptor.MaxJointDeltaRad;
         private float _publishInterval;
         private float _publishTimer;
-
-        // Thumbs-up gesture debounce (driven externally by TeleopController)
-        private bool _wasThumbsUp;
-        private float _thumbsUpHoldTimer;
+        private ArmOperatorInput _input;
+        private ArmOperatorInput _frame;
+        private bool _suppressMotionThisPublish;
+        private bool _clutchAnchored;
+        private Vector3 _handAnchor;
+        private Vector3 _eeAtClutch;
+        private Quaternion _rotAnchor = Quaternion.identity;
+        private int _jogJoint;
+        private string _status = "Arm off";
 
         public bool IsConfigured => _profile != null && _ikSolver != null;
-        public bool ArmEnabled => _armEnabled;
-        public string HudHint => "Right hand: arm IK · Pinch: gripper · Left thumbs-up (hold): toggle arm";
+        public bool ArmEnabled => _gate.Flow.TorqueEnabled;
+        public ArmEnablePhase EnablePhase => _gate.Flow.Phase;
+        public bool ClutchEngaged => _gate.Flow.ClutchEngaged;
+        public string StatusText => _status;
+        public string HudHint =>
+            "Right trigger: clutch · Pinch: gripper · Left X / thumbs-up: enable · REAL: Left X again · Poor tracking: right stick Y jogs";
 
         public void Configure(RobotProfile profile, Transform workspaceOrigin)
         {
             _profile = profile;
             _workspaceOrigin = workspaceOrigin;
             _ikSolver = new ArmIKSolver();
+            _gate.Bind(profile);
             _publishInterval = 1f / PublishHz;
             _publishTimer = 0f;
-            _armEnabled = false;
-            _wasThumbsUp = false;
-            _thumbsUpHoldTimer = 0f;
+            _suppressMotionThisPublish = false;
+            _clutchAnchored = false;
+            _jogJoint = 0;
+            _maxDelta = RobotDescriptor.ClampJointDelta(profile != null ? profile.MaxJointDeltaRad : 0f);
+            _smoother.MaxSpeedMps = RobotDescriptor.MaxCartesianSpeedMps;
+            _smoother.Snap(Vector3.zero);
 
-            int n = profile.Joints != null ? profile.Joints.Length : 6;
+            int n = profile != null && profile.Joints != null ? profile.Joints.Length : 0;
             _jointNames = new string[n];
             _jointMin = new float[n];
             _jointMax = new float[n];
@@ -67,128 +87,197 @@ namespace OmniBot.VR.Control.Manip
                 _currentAngles[i] = profile.Joints[i].Home;
             }
 
-            // Ensure a workspace origin exists at the arm base height.
-            if (_workspaceOrigin == null)
+            if (_workspaceOrigin == null && profile != null)
             {
                 var origin = new GameObject("HandWorkspaceOrigin");
                 origin.transform.position = new Vector3(0f, profile.ArmBaseHeight, 0f);
                 _workspaceOrigin = origin.transform;
                 Debug.LogWarning("[HandIK6DofScheme] workspaceOrigin not set — created default at arm base height.");
             }
+
+            RefreshStatus();
         }
+
+        public void FeedArmInput(ArmOperatorInput input) => _input = input;
 
         public bool Tick(ref HandPose rightHand, ref HandPose leftHand, IRobotLink link)
         {
-            if (!IsConfigured || _profile == null || !link.IsConnected) return false;
+            if (!IsConfigured || _profile == null || link == null || !link.IsConnected) return false;
 
-            // ── Thumbs-up hold → toggle arm enable ─────────────────────────────
-            if (leftHand.Tracked)
-                TickThumbsUp(leftHand, link);
-            else
+            _frame = _input;
+            ClearEdges();
+            var signal = _gate.Consume(_frame);
+            ArmEnablePublish.Apply(signal, _profile, link);
+            if (signal.PhaseChanged) Debug.Log("[HandIK6DofScheme] " + _gate.Flow.Describe(_frame.TrackingGood, JogJointLabel()));
+            RefreshStatus();
+
+            if (_gate.ClutchRising)
             {
-                _thumbsUpHoldTimer = 0f;
-                _wasThumbsUp = false;
+                _handAnchor = rightHand.Position;
+                _rotAnchor = rightHand.Rotation;
+                _eeAtClutch = _ikSolver.ForwardEndEffector(_currentAngles);
+                _clutchAnchored = true;
+                _suppressMotionThisPublish = true;
+                _smoother.Snap(_eeAtClutch);
             }
 
-            if (!_armEnabled || !rightHand.Tracked) return false;
+            if (!_gate.Flow.MotionAllowed)
+            {
+                _suppressMotionThisPublish = false;
+                _clutchAnchored = false;
+                return false;
+            }
 
-            // ── Publish at 20 Hz ───────────────────────────────────────────────
-            _publishTimer += Time.deltaTime;
+            float dt = _frame.DeltaTime > 0f ? _frame.DeltaTime : Time.deltaTime;
+            _publishTimer += dt;
             if (_publishTimer < _publishInterval) return false;
             _publishTimer -= _publishInterval;
 
-            // 1. Hand position relative to the arm workspace origin
-            float scale = _profile.ArmMaxReach / _profile.HandWorkspaceRadius;
-            Vector3 armBaseWorld = _workspaceOrigin.position;
-
-            Vector3 targetRelativeToBase = (rightHand.Position - armBaseWorld) * scale;
-            targetRelativeToBase = Vector3.ClampMagnitude(targetRelativeToBase, _profile.ArmMaxReach * 0.98f);
-            Vector3 absoluteTarget = armBaseWorld + targetRelativeToBase;
-
-            // ── Robot-side IK: stream the Cartesian target, let MoveIt Servo solve ──
-            if (_profile.IkLocation == IkLocation.Robot &&
-                !string.IsNullOrEmpty(_profile.Topics.IkTargetPose))
+            if (_suppressMotionThisPublish)
             {
-                PublishTargetPose(absoluteTarget, rightHand.Rotation, link);
+                _suppressMotionThisPublish = false;
+                PublishJoints(link);
                 return true;
             }
 
-            // ── Headset-side IK: solve locally, stream joint angles ──────────────
-            // 2. Solve IK (solver works in world space anchored at the arm base)
-            float[] newAngles = _ikSolver.SolveIK(absoluteTarget, rightHand.Rotation, _currentAngles);
+            if (!_frame.TrackingGood)
+            {
+                ApplyJog(dt);
+                PublishJoints(link);
+                return true;
+            }
 
-            // 3. Clamp to the profile's joint limits (profile is the source of truth)
-            for (int i = 0; i < newAngles.Length && i < _jointMin.Length; i++)
-                newAngles[i] = Mathf.Clamp(newAngles[i], _jointMin[i], _jointMax[i]);
+            if (_profile.IkLocation == IkLocation.Robot &&
+                !string.IsNullOrEmpty(_profile.Topics.IkTargetPose))
+            {
+                return PublishRobotIk(rightHand, dt, link);
+            }
 
-            // 4. Gripper from pinch (last joint)
-            if (newAngles.Length > 0 && _jointMax.Length > 0)
-                newAngles[newAngles.Length - 1] = PinchToGripper(rightHand.PinchStrength);
-
-            _currentAngles = newAngles;
-
-            // 5. Publish JointState
-            var msg = new JointStateMsg((string[])_jointNames.Clone(), newAngles);
-            link.Publish(_profile.Topics.ArmCommands, msg);
+            ApplyHandIk(rightHand, dt);
+            PublishJoints(link);
             return true;
-        }
-
-        /// <summary>
-        /// Publishes the Cartesian end-effector target as a PoseStamped to the
-        /// MoveIt Servo topic. The robot solves IK with collision awareness.
-        /// </summary>
-        private void PublishTargetPose(Vector3 position, Quaternion rotation, IRobotLink link)
-        {
-            // Express the target in the arm base frame (relative to the workspace origin)
-            Vector3 localPos = _workspaceOrigin.InverseTransformPoint(position);
-            Quaternion localRot = Quaternion.Inverse(_workspaceOrigin.rotation) * rotation;
-
-            var pose = new PoseStampedMsg(
-                new Vector3Msg(localPos.x, localPos.y, localPos.z),
-                new QuaternionMsg(localRot.x, localRot.y, localRot.z, localRot.w));
-            link.Publish(_profile.Topics.IkTargetPose, pose);
         }
 
         public void Stop(IRobotLink link)
         {
-            _armEnabled = false;
+            var signal = _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
             _publishTimer = 0f;
+            _suppressMotionThisPublish = false;
+            _clutchAnchored = false;
+            RefreshStatus();
         }
 
         public void SetArmEnabled(bool enabled, IRobotLink link)
         {
-            _armEnabled = enabled;
-            if (_profile != null && link != null && link.IsConnected && !string.IsNullOrEmpty(_profile.Topics.ArmEnable))
-                link.Publish(_profile.Topics.ArmEnable, new BoolMsg(enabled));
-            Debug.Log($"[HandIK6DofScheme] Arm {(enabled ? "enabled" : "disabled")}");
+            // true is a request, not a REAL confirm. false disarms immediately.
+            var signal = enabled ? _gate.Flow.RequestEnable() : _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
+            RefreshStatus();
         }
 
-        // ── Thumbs-up gesture (ported from HandTrackingArmController) ────────────
-        // TeleopController feeds the left HandPose; we detect the hold here so the
-        // scheme owns the arm-enable state machine. The skeleton-based detection
-        // needs the OVRHand reference, so TeleopController calls the overload
-        // below when it has one; this struct-based path uses a simple pinch
-        // heuristic fallback.
-        private void TickThumbsUp(HandPose leftHand, IRobotLink link)
+        private void ApplyJog(float dt)
         {
-            // Fallback heuristic: treat a strongly-tracked left hand raised upright
-            // with low index pinch as a thumbs-up intent. The precise skeleton
-            // check is done in TeleopController which toggles via SetArmEnabled.
-            // (Kept here for the pure-struct path / testing.)
+            if (_currentAngles.Length == 0) return;
+            if (_frame.CycleJointPressed)
+                _jogJoint = (_jogJoint + 1) % _currentAngles.Length;
+
+            var target = (float[])_currentAngles.Clone();
+            int index = Mathf.Clamp(_jogJoint, 0, target.Length - 1);
+            target[index] = _currentAngles[index] + JointJog.DeltaRad(_frame.JogAxis, dt);
+            JointRateLimiter.StepTowards(_currentAngles, target, _maxDelta, _jointMin, _jointMax);
+            RefreshStatus();
         }
 
-        /// <summary>
-        /// Toggle arm enable — called by <see cref="TeleopController"/> when it
-        /// detects the thumbs-up hold gesture from the OVR skeleton.
-        /// </summary>
-        public void ToggleArmEnabled(IRobotLink link) => SetArmEnabled(!_armEnabled, link);
+        private void ApplyHandIk(HandPose rightHand, float dt)
+        {
+            if (_currentAngles.Length == 0) return;
+            var targetAngles = (float[])_currentAngles.Clone();
+            if (HandMoved(rightHand))
+            {
+                Vector3 target = ClutchTarget(rightHand, dt);
+                float[] solved = _ikSolver.SolveIK(target, rightHand.Rotation, _currentAngles);
+                int n = targetAngles.Length < solved.Length ? targetAngles.Length : solved.Length;
+                for (int i = 0; i < n; i++) targetAngles[i] = solved[i];
+            }
+
+            if (targetAngles.Length > 0)
+                targetAngles[targetAngles.Length - 1] = PinchToGripper(rightHand.PinchStrength);
+
+            JointRateLimiter.StepTowards(_currentAngles, targetAngles, _maxDelta, _jointMin, _jointMax);
+        }
+
+        private bool PublishRobotIk(HandPose rightHand, float dt, IRobotLink link)
+        {
+            if (!HandMoved(rightHand)) return false;
+            Vector3 target = ClutchTarget(rightHand, dt);
+            Vector3 localPos = _workspaceOrigin.InverseTransformPoint(target);
+            Quaternion localRot = Quaternion.Inverse(_workspaceOrigin.rotation) * rightHand.Rotation;
+            var pose = new PoseStampedMsg(
+                new Vector3Msg(localPos.x, localPos.y, localPos.z),
+                new QuaternionMsg(localRot.x, localRot.y, localRot.z, localRot.w));
+            link.Publish(_profile.Topics.IkTargetPose, pose);
+            return true;
+        }
+
+        private Vector3 ClutchTarget(HandPose rightHand, float dt)
+        {
+            float reach = _profile.ArmMaxReach > 0f ? _profile.ArmMaxReach : RobotDescriptor.So101.Reach;
+            Vector3 delta = _clutchAnchored ? (rightHand.Position - _handAnchor) * Scale() : Vector3.zero;
+            if (reach > 0f) delta = Vector3.ClampMagnitude(delta, reach);
+            Vector3 desired = _eeAtClutch + delta;
+            return _smoother.MoveTowards(desired, dt);
+        }
+
+        private bool HandMoved(HandPose rightHand)
+        {
+            if (!_clutchAnchored) return true;
+            if ((rightHand.Position - _handAnchor).sqrMagnitude > StillPositionMetres * StillPositionMetres)
+                return true;
+            if (rightHand.Rotation == _rotAnchor) return false;
+            return Quaternion.Angle(rightHand.Rotation, _rotAnchor) > StillRotationDegrees;
+        }
+
+        private float Scale()
+        {
+            float radius = _profile.HandWorkspaceRadius;
+            if (radius < 1e-4f) radius = RobotDescriptor.So101.HandWorkspaceRadius;
+            return _profile.ArmMaxReach / radius;
+        }
+
+        private void PublishJoints(IRobotLink link)
+        {
+            if (_profile.Topics == null || string.IsNullOrEmpty(_profile.Topics.ArmCommands) || _jointNames.Length == 0) return;
+            var msg = new JointStateMsg((string[])_jointNames.Clone(), (float[])_currentAngles.Clone());
+            link.Publish(_profile.Topics.ArmCommands, msg);
+        }
 
         private float PinchToGripper(float pinchStrength)
         {
-            float t = Mathf.Clamp01(pinchStrength);
-            // Open = max, closed = min (matches ArmIKSolver.PinchToGripper)
+            if (_jointMax.Length == 0) return 0f;
             int last = _jointMax.Length - 1;
-            return Mathf.Lerp(_jointMax[last], _jointMin[last], t);
+            return Mathf.Lerp(_jointMax[last], _jointMin[last], Mathf.Clamp01(pinchStrength));
+        }
+
+        private string JogJointLabel()
+        {
+            if (_jointNames == null || _jointNames.Length == 0) return "joint";
+            int index = Mathf.Clamp(_jogJoint, 0, _jointNames.Length - 1);
+            return _jointNames[index];
+        }
+
+        private void RefreshStatus()
+        {
+            _status = _gate.Flow.Describe(_frame.TrackingGood, JogJointLabel());
+        }
+
+        private void ClearEdges()
+        {
+            _input.EnableRequested = false;
+            _input.ConfirmRequested = false;
+            _input.DisarmRequested = false;
+            _input.CancelRequested = false;
+            _input.CycleJointPressed = false;
         }
     }
 }

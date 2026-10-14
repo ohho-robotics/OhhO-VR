@@ -4,82 +4,126 @@ using OmniBot.VR.Core;
 namespace OmniBot.VR.Control.Manip
 {
     /// <summary>
-    /// Gripper-only manipulation — for robots that have a single-DOF gripper but
-    /// no arm joints to IK (e.g. a simple pick-and-place AMR, or a drone with a
-    /// servo gripper). The right-hand pinch strength directly drives the gripper
-    /// joint; no IK is solved. Publishes a <see cref="JointStateMsg"/> with just
-    /// the gripper position at 20 Hz.
+    /// Single-DOF gripper. Same enable / REAL confirm / clutch gate as the
+    /// 6-DOF arm so a one-DOF tool cannot close on enable. Pinch is applied
+    /// only while the clutch is held and is rate-limited like every other joint.
     /// </summary>
     public sealed class GripperOnlyScheme : IManipulationScheme
     {
         private const float PublishHz = 20f;
 
         private RobotProfile _profile;
-        private Transform _workspaceOrigin;
+        private readonly ArmSessionGate _gate = new ArmSessionGate();
         private float _publishInterval;
         private float _publishTimer;
-        private bool _armEnabled;
-        private string[] _jointNames;
+        private float _gripper;
         private float _gripperOpen;
         private float _gripperClosed;
+        private float _maxDelta = RobotDescriptor.MaxJointDeltaRad;
+        private string[] _jointNames = { "gripper" };
+        private ArmOperatorInput _input;
+        private ArmOperatorInput _frame;
+        private bool _suppressMotionThisPublish;
+        private string _status = "Arm off";
 
         public bool IsConfigured => _profile != null;
-        public bool ArmEnabled => _armEnabled;
-        public string HudHint => "Pinch: gripper open/close · Left thumbs-up (hold): toggle";
+        public bool ArmEnabled => _gate.Flow.TorqueEnabled;
+        public ArmEnablePhase EnablePhase => _gate.Flow.Phase;
+        public bool ClutchEngaged => _gate.Flow.ClutchEngaged;
+        public string StatusText => _status;
+        public string HudHint => "Right trigger: clutch · Pinch: gripper · Left X / thumbs-up: enable · REAL: Left X again";
 
         public void Configure(RobotProfile profile, Transform workspaceOrigin)
         {
             _profile = profile;
-            _workspaceOrigin = workspaceOrigin;
+            _gate.Bind(profile);
             _publishInterval = 1f / PublishHz;
             _publishTimer = 0f;
-            _armEnabled = false;
+            _suppressMotionThisPublish = false;
+            _maxDelta = RobotDescriptor.ClampJointDelta(profile != null ? profile.MaxJointDeltaRad : 0f);
 
-            // The single joint is the gripper (last joint in the profile).
-            if (profile.Joints != null && profile.Joints.Length > 0)
+            if (profile != null && profile.Joints != null && profile.Joints.Length > 0)
             {
                 var grip = profile.Joints[profile.Joints.Length - 1];
                 _jointNames = new[] { grip.Name };
                 _gripperOpen = grip.Max;
                 _gripperClosed = grip.Min;
+                _gripper = grip.Home;
             }
             else
             {
                 _jointNames = new[] { "gripper" };
                 _gripperOpen = 0.8f;
                 _gripperClosed = 0f;
+                _gripper = 0f;
             }
+            RefreshStatus();
         }
+
+        public void FeedArmInput(ArmOperatorInput input) => _input = input;
 
         public bool Tick(ref HandPose rightHand, ref HandPose leftHand, IRobotLink link)
         {
-            if (!IsConfigured || _profile == null || !link.IsConnected) return false;
-            if (!_armEnabled || !rightHand.Tracked) return false;
+            if (!IsConfigured || _profile == null || link == null || !link.IsConnected) return false;
 
-            _publishTimer += Time.deltaTime;
+            _frame = _input;
+            ClearEdges();
+            var signal = _gate.Consume(_frame);
+            ArmEnablePublish.Apply(signal, _profile, link);
+            RefreshStatus();
+
+            if (_gate.ClutchRising) _suppressMotionThisPublish = true;
+            if (!_gate.Flow.MotionAllowed)
+            {
+                _suppressMotionThisPublish = false;
+                return false;
+            }
+
+            float dt = _frame.DeltaTime > 0f ? _frame.DeltaTime : Time.deltaTime;
+            _publishTimer += dt;
             if (_publishTimer < _publishInterval) return false;
             _publishTimer -= _publishInterval;
 
-            // Pinch → gripper: 0 = open, 1 = closed
-            float gripper = Mathf.Lerp(_gripperOpen, _gripperClosed, Mathf.Clamp01(rightHand.PinchStrength));
+            if (!_suppressMotionThisPublish && _frame.TrackingGood)
+            {
+                float goal = Mathf.Lerp(_gripperOpen, _gripperClosed, Mathf.Clamp01(rightHand.PinchStrength));
+                var current = new[] { _gripper };
+                JointRateLimiter.StepTowards(current, new[] { goal }, _maxDelta,
+                    new[] { _gripperClosed }, new[] { _gripperOpen });
+                _gripper = current[0];
+            }
+            _suppressMotionThisPublish = false;
 
-            var msg = new JointStateMsg((string[])_jointNames.Clone(), new[] { gripper });
-            link.Publish(_profile.Topics.ArmCommands, msg);
+            if (_profile.Topics == null || string.IsNullOrEmpty(_profile.Topics.ArmCommands)) return false;
+            link.Publish(_profile.Topics.ArmCommands, new JointStateMsg((string[])_jointNames.Clone(), new[] { _gripper }));
             return true;
         }
 
         public void Stop(IRobotLink link)
         {
-            _armEnabled = false;
+            var signal = _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
             _publishTimer = 0f;
+            _suppressMotionThisPublish = false;
+            RefreshStatus();
         }
 
         public void SetArmEnabled(bool enabled, IRobotLink link)
         {
-            _armEnabled = enabled;
-            if (_profile != null && link != null && link.IsConnected && !string.IsNullOrEmpty(_profile.Topics.ArmEnable))
-                link.Publish(_profile.Topics.ArmEnable, new BoolMsg(enabled));
-            Debug.Log($"[GripperOnlyScheme] Gripper {(enabled ? "enabled" : "disabled")}");
+            var signal = enabled ? _gate.Flow.RequestEnable() : _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
+            RefreshStatus();
+        }
+
+        private void RefreshStatus() => _status = _gate.Flow.Describe(_frame.TrackingGood, _jointNames[0]);
+
+        private void ClearEdges()
+        {
+            _input.EnableRequested = false;
+            _input.ConfirmRequested = false;
+            _input.DisarmRequested = false;
+            _input.CancelRequested = false;
+            _input.CycleJointPressed = false;
         }
     }
 }

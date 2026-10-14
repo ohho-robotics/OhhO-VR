@@ -16,6 +16,28 @@ namespace OmniBot.VR.Control
     }
 
     /// <summary>
+    /// Where the arm commands are going. <see cref="Real"/> is the default so a
+    /// profile that forgot to set this still requires the second confirm.
+    /// Only an explicit simulated garage status selects <see cref="Sim"/>.
+    /// </summary>
+    public enum ArmDeployment
+    {
+        Real = 0,
+        Sim = 1,
+    }
+
+    public static class ArmDeploymentRules
+    {
+        public static ArmDeployment FromGarageStatus(string status)
+        {
+            if (!string.IsNullOrEmpty(status) &&
+                status.Trim().Equals("simulated", System.StringComparison.OrdinalIgnoreCase))
+                return ArmDeployment.Sim;
+            return ArmDeployment.Real;
+        }
+    }
+
+    /// <summary>
     /// Runtime capability profile for the robot the user picked in their garage —
     /// a C# mirror of <c>website/lib/garage/robot-config.ts</c>
     /// <c>RobotConfig</c>. Replaces the hardcoded <c>Core/RobotConfig.cs</c>
@@ -74,6 +96,25 @@ namespace OmniBot.VR.Control
         /// geometry is unknown — the solver falls back to equal-length segments.
         /// </summary>
         public float[] ArmLinkLengths;
+
+        /// <summary>
+        /// Sim skips the second confirm. Anything that is not explicitly
+        /// simulated — including a missing garage status — is <see cref="ArmDeployment.Real"/>.
+        /// </summary>
+        public ArmDeployment Deployment = ArmDeployment.Real;
+
+        /// <summary>
+        /// Per-command joint step cap. <see cref="RobotProfileFactory"/> sets
+        /// this from <see cref="Core.RobotDescriptor.MaxJointDeltaRad"/>. The
+        /// manipulation schemes clamp anything larger back down.
+        /// </summary>
+        public float MaxJointDeltaRad = Core.RobotDescriptor.MaxJointDeltaRad;
+
+        /// <summary>
+        /// True only when <c>so101_joint_zeros.json</c> says the SO-101 offsets
+        /// were measured (OHH-94). Stays false while homes are the URDF zero.
+        /// </summary>
+        public bool JointZerosCalibrated;
 
         /// <summary>True if this is a dual-arm humanoid (two arms driven by two hands).</summary>
         public bool IsDualArm;

@@ -34,6 +34,16 @@ namespace OmniBot.VR.Control
 
         /// <summary>IK location override (-1 = use profile default, 0 = headset, 1 = robot).</summary>
         public int ikLocationOverride = -1;
+
+        /// <summary>
+        /// Optional radians added to each joint home. Null, or a length that
+        /// does not match the arm, is ignored.
+        ///
+        /// TODO(OHH-94): this is not a servo-tick calibration. Measured
+        /// STS3215 home ticks belong in the robot's arm_params.yaml. Do not
+        /// write tick counts into this array.
+        /// </summary>
+        public float[] jointZeroOffsetsRad;
     }
 
     /// <summary>Serializable Vector3 for JSON persistence (Unity Vector3 isn't JSON-serializable by default).</summary>
@@ -92,6 +102,17 @@ namespace OmniBot.VR.Control
             if (cal.maxAngVelOverride > 0f) profile.MaxAngVel = cal.maxAngVelOverride;
             if (cal.ikLocationOverride == 0) profile.IkLocation = IkLocation.Headset;
             else if (cal.ikLocationOverride == 1) profile.IkLocation = IkLocation.Robot;
+
+            if (cal.jointZeroOffsetsRad != null && profile.Joints != null &&
+                cal.jointZeroOffsetsRad.Length == profile.Joints.Length)
+            {
+                for (int i = 0; i < profile.Joints.Length; i++)
+                {
+                    var joint = profile.Joints[i];
+                    joint.Home += cal.jointZeroOffsetsRad[i];
+                    profile.Joints[i] = joint;
+                }
+            }
         }
 
         /// <summary>Reset calibration for a robot id to defaults.</summary>

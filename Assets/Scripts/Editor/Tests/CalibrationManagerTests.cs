@@ -111,6 +111,39 @@ namespace OmniBot.VR.Tests
         }
 
         [Test]
+        public void ApplyTo_JointZeroOffsets_AddsWhenLengthMatches()
+        {
+            var profile = new RobotProfile
+            {
+                Joints = new[]
+                {
+                    new JointSpec("j", "J", -1f, 1f, 0f),
+                    new JointSpec("g", "G", -0.1f, 0.8f, 0f),
+                }
+            };
+            CalibrationManager.ApplyTo(profile, new RobotCalibration
+            {
+                jointZeroOffsetsRad = new[] { 0.1f, -0.05f }
+            });
+            Assert.AreEqual(0.1f, profile.Joints[0].Home, 1e-4f);
+            Assert.AreEqual(-0.05f, profile.Joints[1].Home, 1e-4f);
+        }
+
+        [Test]
+        public void ApplyTo_JointZeroOffsets_IgnoresLengthMismatch()
+        {
+            var profile = new RobotProfile
+            {
+                Joints = new[] { new JointSpec("j", "J", -1f, 1f, 0.2f) }
+            };
+            CalibrationManager.ApplyTo(profile, new RobotCalibration
+            {
+                jointZeroOffsetsRad = new[] { 1f, 2f }
+            });
+            Assert.AreEqual(0.2f, profile.Joints[0].Home, 1e-4f);
+        }
+
+        [Test]
         public void Reset_ClearsCalibration()
         {
             CalibrationManager.Save(TestRobotId, new RobotCalibration { armBaseHeightOffset = 0.5f });

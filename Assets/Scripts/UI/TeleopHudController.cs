@@ -224,6 +224,8 @@ namespace OmniBot.VR.UI
             }
 
             if (modeText != null) modeText.text = _controlMode;
+            if (hintsText != null && _teleop != null)
+                hintsText.text = _teleop.DriveHint + "\n" + _teleop.ManipHint + "\n" + _teleop.ArmStatus;
         }
 
         // ── Camera ────────────────────────────────────────────────────────────

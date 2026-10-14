@@ -18,13 +18,18 @@ namespace OmniBot.VR.Control.Manip
     public sealed class DualArmManipulationScheme : IManipulationScheme
     {
         private const float PublishHz = 20f;
-        private const float ThumbsUpHoldRequired = 0.5f;
 
         private RobotProfile _profile;
         private Transform _workspaceOrigin;
+        private readonly ArmSessionGate _gate = new ArmSessionGate();
         private float _publishInterval;
         private float _publishTimer;
-        private bool _armEnabled;
+        private float _maxDelta = RobotDescriptor.MaxJointDeltaRad;
+        private ArmOperatorInput _input;
+        private ArmOperatorInput _frame;
+        private bool _suppressMotionThisPublish;
+        private int _jogJoint;
+        private string _status = "Arm off";
 
         // Two independent IK solvers (one per arm)
         private FabrikSolver _rightSolver;
@@ -41,16 +46,22 @@ namespace OmniBot.VR.Control.Manip
         private Vector3 _leftArmOffset;
 
         public bool IsConfigured => _profile != null && _rightSolver != null;
-        public bool ArmEnabled => _armEnabled;
-        public string HudHint => "Right hand: right arm · Left hand: left arm · Pinch: gripper · Left thumbs-up (hold): toggle";
+        public bool ArmEnabled => _gate.Flow.TorqueEnabled;
+        public ArmEnablePhase EnablePhase => _gate.Flow.Phase;
+        public bool ClutchEngaged => _gate.Flow.ClutchEngaged;
+        public string StatusText => _status;
+        public string HudHint => "Right trigger: clutch · Two hands: dual arm · Left X / thumbs-up: enable · REAL: Left X again";
 
         public void Configure(RobotProfile profile, Transform workspaceOrigin)
         {
             _profile = profile;
             _workspaceOrigin = workspaceOrigin;
+            _gate.Bind(profile);
             _publishInterval = 1f / PublishHz;
             _publishTimer = 0f;
-            _armEnabled = false;
+            _suppressMotionThisPublish = false;
+            _jogJoint = 0;
+            _maxDelta = RobotDescriptor.ClampJointDelta(profile != null ? profile.MaxJointDeltaRad : 0f);
 
             // For dual-arm, the profile's Joints array describes one arm.
             // We mirror it for both arms with left/right prefixed names.
@@ -85,29 +96,55 @@ namespace OmniBot.VR.Control.Manip
             // Shoulder offsets: arms are spaced ~0.36 m apart on a humanoid torso.
             _rightArmOffset = new Vector3(+0.18f, 0f, 0f);
             _leftArmOffset = new Vector3(-0.18f, 0f, 0f);
+            RefreshStatus();
         }
+
+        public void FeedArmInput(ArmOperatorInput input) => _input = input;
 
         public bool Tick(ref HandPose rightHand, ref HandPose leftHand, IRobotLink link)
         {
-            if (!IsConfigured || _profile == null || !link.IsConnected) return false;
-            if (!_armEnabled) return false;
+            if (!IsConfigured || _profile == null || link == null || !link.IsConnected) return false;
 
-            _publishTimer += Time.deltaTime;
+            _frame = _input;
+            ClearEdges();
+            var signal = _gate.Consume(_frame);
+            ArmEnablePublish.Apply(signal, _profile, link);
+            RefreshStatus();
+
+            if (_gate.ClutchRising) _suppressMotionThisPublish = true;
+            if (!_gate.Flow.MotionAllowed)
+            {
+                _suppressMotionThisPublish = false;
+                return false;
+            }
+
+            float dt = _frame.DeltaTime > 0f ? _frame.DeltaTime : Time.deltaTime;
+            _publishTimer += dt;
             if (_publishTimer < _publishInterval) return false;
             _publishTimer -= _publishInterval;
 
-            // Solve each arm independently if the corresponding hand is tracked.
-            if (rightHand.Tracked)
-                _rightAngles = SolveArm(_rightSolver, rightHand, _workspaceOrigin, _rightArmOffset, _rightAngles, _profile);
-
-            if (leftHand.Tracked)
-                _leftAngles = SolveArm(_leftSolver, leftHand, _workspaceOrigin, _leftArmOffset, _leftAngles, _profile);
+            if (_suppressMotionThisPublish)
+            {
+                _suppressMotionThisPublish = false;
+            }
+            else if (!_frame.TrackingGood)
+            {
+                ApplyJog(dt);
+            }
+            else if (_workspaceOrigin != null)
+            {
+                if (rightHand.Tracked)
+                    _rightAngles = StepArm(_rightSolver, rightHand, _rightArmOffset, _rightAngles);
+                if (leftHand.Tracked)
+                    _leftAngles = StepArm(_leftSolver, leftHand, _leftArmOffset, _leftAngles);
+            }
 
             // Combine both arms into one JointState message
             var allAngles = new float[_armJointCount * 2];
             System.Array.Copy(_rightAngles, 0, allAngles, 0, _armJointCount);
             System.Array.Copy(_leftAngles, 0, allAngles, _armJointCount, _armJointCount);
 
+            if (_profile.Topics == null || string.IsNullOrEmpty(_profile.Topics.ArmCommands)) return false;
             var msg = new JointStateMsg((string[])_allJointNames.Clone(), allAngles);
             link.Publish(_profile.Topics.ArmCommands, msg);
             return true;
@@ -115,16 +152,66 @@ namespace OmniBot.VR.Control.Manip
 
         public void Stop(IRobotLink link)
         {
-            _armEnabled = false;
+            var signal = _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
             _publishTimer = 0f;
+            _suppressMotionThisPublish = false;
+            RefreshStatus();
         }
 
         public void SetArmEnabled(bool enabled, IRobotLink link)
         {
-            _armEnabled = enabled;
-            if (_profile != null && link != null && link.IsConnected && !string.IsNullOrEmpty(_profile.Topics.ArmEnable))
-                link.Publish(_profile.Topics.ArmEnable, new BoolMsg(enabled));
-            Debug.Log($"[DualArmManipulationScheme] Arms {(enabled ? "enabled" : "disabled")}");
+            var signal = enabled ? _gate.Flow.RequestEnable() : _gate.Flow.Disarm();
+            ArmEnablePublish.Apply(signal, _profile, link);
+            RefreshStatus();
+        }
+
+        private void ApplyJog(float dt)
+        {
+            if (_rightAngles == null || _rightAngles.Length == 0) return;
+            if (_frame.CycleJointPressed)
+                _jogJoint = (_jogJoint + 1) % _rightAngles.Length;
+            var target = (float[])_rightAngles.Clone();
+            int index = Mathf.Clamp(_jogJoint, 0, target.Length - 1);
+            target[index] = _rightAngles[index] + JointJog.DeltaRad(_frame.JogAxis, dt);
+            JointRateLimiter.StepTowards(_rightAngles, target, _maxDelta, Limits(true), Limits(false));
+        }
+
+        private float[] StepArm(FabrikSolver solver, HandPose hand, Vector3 armOffset, float[] current)
+        {
+            var held = current != null ? (float[])current.Clone() : new float[_armJointCount];
+            float[] solved = SolveArm(solver, hand, _workspaceOrigin, armOffset, held, _profile);
+            JointRateLimiter.StepTowards(held, solved, _maxDelta, Limits(true), Limits(false));
+            return held;
+        }
+
+        private float[] Limits(bool min)
+        {
+            int n = _armJointCount;
+            var values = new float[n];
+            for (int i = 0; i < n && _profile.Joints != null && i < _profile.Joints.Length; i++)
+                values[i] = min ? _profile.Joints[i].Min : _profile.Joints[i].Max;
+            return values;
+        }
+
+        private void RefreshStatus()
+        {
+            string joint = "joint";
+            if (_profile != null && _profile.Joints != null && _profile.Joints.Length > 0)
+            {
+                int index = Mathf.Clamp(_jogJoint, 0, _profile.Joints.Length - 1);
+                joint = _profile.Joints[index].Name;
+            }
+            _status = _gate.Flow.Describe(_frame.TrackingGood, joint);
+        }
+
+        private void ClearEdges()
+        {
+            _input.EnableRequested = false;
+            _input.ConfirmRequested = false;
+            _input.DisarmRequested = false;
+            _input.CancelRequested = false;
+            _input.CycleJointPressed = false;
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using OmniBot.VR.Core;
 using OmniBot.VR.Core.Platform;
 
 namespace OmniBot.VR.Control
@@ -19,31 +20,10 @@ namespace OmniBot.VR.Control
     /// </summary>
     public static class RobotProfileFactory
     {
-        // ── SO-101 6-DOF arm — the OhhO reference arm (mirrors robot-config.ts) ──
-        public static readonly JointSpec[] So101Joints =
-        {
-            new JointSpec("arm_shoulder_pan",  "Pan",   -3.14f, 3.14f, 0f),
-            new JointSpec("arm_shoulder_lift", "Lift",  -1.57f, 1.57f, 0f),
-            new JointSpec("arm_elbow_flex",    "Elbow", -1.57f, 1.57f, 0f),
-            new JointSpec("arm_wrist_flex",    "Wrist", -1.57f, 1.57f, 0f),
-            new JointSpec("arm_wrist_roll",    "Roll",  -3.14f, 3.14f, 0f),
-            new JointSpec("arm_gripper",       "Grip",  -0.1f,  0.8f,  0f),
-        };
-
-        // SO-101 link lengths (metres, from CAD) — used for the hand→arm reach mapping.
-        private const float So101Link1 = 0.117f;
-        private const float So101Link2 = 0.133f;
-        private const float So101Link3 = 0.080f;
-        private const float So101BaseHeight = 0.350f;
-
-        // SO-101 link lengths array (for the generic FABRIK solver).
-        private static readonly float[] So101LinkLengths = { So101Link1, So101Link2, So101Link3 };
-
-        // Generic default link length when a flagship arm's geometry is unknown.
-        private const float GenericLinkLength = 0.10f;
-
-        // Hand-tracking workspace radius (matches the old RobotConfig constant).
-        private const float HandWorkspaceRadius = 0.40f;
+        // SO-101 joint specs. Names, limits, link lengths, and kinematic zeros
+        // are RobotDescriptor.So101. Homes add so101_joint_zeros.json offsets,
+        // which ship as 0 until OHH-94 sets calibrated=true.
+        public static JointSpec[] So101Joints => CreateSo101Joints();
 
         /// <summary>
         /// Derive a profile from a resolved garage robot. Returns null only if the
@@ -61,7 +41,38 @@ namespace OmniBot.VR.Control
 
             var profile = Derive(hw, robot.RobotType, category);
             ApplyFlagshipOverride(profile, modelId, category);
+            profile.Deployment = ArmDeploymentRules.FromGarageStatus(robot.UserRobot != null ? robot.UserRobot.Status : null);
+            profile.MaxJointDeltaRad = RobotDescriptor.MaxJointDeltaRad;
+            bool so101Family = modelId == "so101-arm" || modelId == "omnibot" || modelId == "omnibot-pro";
+            profile.JointZerosCalibrated = so101Family && So101JointZeroConfig.Load().Calibrated;
             return profile;
+        }
+
+        /// <summary>
+        /// SO-101 joints from <see cref="RobotDescriptor"/> plus the loaded
+        /// radian offsets. Uncalibrated configs contribute 0.
+        /// </summary>
+        public static JointSpec[] CreateSo101Joints()
+        {
+            return CreateSo101Joints(So101JointZeroConfig.Load().OffsetsRad);
+        }
+
+        /// <summary>
+        /// Builds SO-101 joints from <see cref="RobotDescriptor"/> and adds
+        /// <paramref name="offsetsRad"/> to the kinematic zeros. Null offsets
+        /// leave the URDF zero unchanged.
+        /// </summary>
+        public static JointSpec[] CreateSo101Joints(float[] offsetsRad)
+        {
+            var d = RobotDescriptor.So101;
+            var joints = new JointSpec[d.JointCount];
+            for (int i = 0; i < d.JointCount; i++)
+            {
+                float home = d.JointZeroRad[i];
+                if (offsetsRad != null && i < offsetsRad.Length) home += offsetsRad[i];
+                joints[i] = new JointSpec(d.JointNames[i], d.JointLabels[i], d.JointMin[i], d.JointMax[i], home);
+            }
+            return joints;
         }
 
         // ── Derivation (mirrors deriveRobotConfig) ──────────────────────────────
@@ -116,10 +127,12 @@ namespace OmniBot.VR.Control
                 IsDualArm = category == "humanoid",
                 IkLocation = IkLocation.Headset, // default: solve in Unity
                 Topics = BuildTopics(spec.BaseDof, hasArm, category, jointStatesTopic),
-                HandWorkspaceRadius = HandWorkspaceRadius,
-                ArmBaseHeight = hasArm ? So101BaseHeight : 0f,
-                ArmMaxReach = hasArm ? So101Link1 + So101Link2 + So101Link3 : 0f,
-                ArmLinkLengths = hasArm ? (float[])So101LinkLengths.Clone() : null,
+                HandWorkspaceRadius = RobotDescriptor.So101.HandWorkspaceRadius,
+                ArmBaseHeight = hasArm ? RobotDescriptor.So101.BaseHeight : 0f,
+                ArmMaxReach = hasArm ? RobotDescriptor.So101.Reach : 0f,
+                ArmLinkLengths = hasArm ? (float[])RobotDescriptor.So101.LinkLengths.Clone() : null,
+                MaxJointDeltaRad = RobotDescriptor.MaxJointDeltaRad,
+                Deployment = ArmDeployment.Real,
             };
         }
 
@@ -155,13 +168,13 @@ namespace OmniBot.VR.Control
             {
                 case "omnibot":
                 case "omnibot-pro":
-                    p.Joints = (JointSpec[])So101Joints.Clone();
+                    p.Joints = CreateSo101Joints();
                     p.ArmDof = 6;
                     p.MaxLinVel = 0.2f;
                     p.MaxAngVel = 1.0f;
-                    p.ArmBaseHeight = So101BaseHeight;
-                    p.ArmMaxReach = So101Link1 + So101Link2 + So101Link3;
-                    p.ArmLinkLengths = (float[])So101LinkLengths.Clone();
+                    p.ArmBaseHeight = RobotDescriptor.So101.BaseHeight;
+                    p.ArmMaxReach = RobotDescriptor.So101.Reach;
+                    p.ArmLinkLengths = (float[])RobotDescriptor.So101.LinkLengths.Clone();
                     p.IsDualArm = false;
                     // OmniBot publishes arm commands + enables on the arm_ topics.
                     p.Topics.ArmCommands = "/arm/joint_commands";
@@ -169,11 +182,11 @@ namespace OmniBot.VR.Control
                     p.Topics.JointStates = "/arm/joint_states";
                     break;
                 case "so101-arm":
-                    p.Joints = (JointSpec[])So101Joints.Clone();
+                    p.Joints = CreateSo101Joints();
                     p.ArmDof = 6;
-                    p.ArmBaseHeight = So101BaseHeight;
-                    p.ArmMaxReach = So101Link1 + So101Link2 + So101Link3;
-                    p.ArmLinkLengths = (float[])So101LinkLengths.Clone();
+                    p.ArmBaseHeight = RobotDescriptor.So101.BaseHeight;
+                    p.ArmMaxReach = RobotDescriptor.So101.Reach;
+                    p.ArmLinkLengths = (float[])RobotDescriptor.So101.LinkLengths.Clone();
                     break;
                 case "ur5e":
                     // UR5e: 6-DOF, 850 mm reach. Link lengths approximate from UR spec.
