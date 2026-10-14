@@ -94,6 +94,11 @@ jobs:
       - name: Force IL2CPP ARM64 and the release package id
         run: python3 .github/workflows/release_support.py patch-settings
 
+      # Same ADTM batchmode abort as the edit-mode job. Runner-only; not committed.
+      # Unity reads this while building, so the tag APK also has Unity audio disabled.
+      - name: Disable Unity audio for headless batchmode
+        run: python3 .github/workflows/release_support.py disable-batchmode-audio
+
       - uses: actions/cache@v4
         with:
           path: Library

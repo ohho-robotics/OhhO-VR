@@ -85,7 +85,7 @@ CI debug sideload builds, when that job is present, generate `ci/debug.keystore`
 - Asset: `OhhO-VR-<tag>.apk` and `OhhO-VR-<tag>.apk.sha256`
 - Notes: rendered from [`release-notes-template.md`](release-notes-template.md)
 
-On the runner only, the job writes IL2CPP, ARM64, the package id, and the player name into `ProjectSettings/ProjectSettings.asset` before `unity-builder`. Those edits are not committed. `allowDirtyBuild` is set because that patch dirties the checkout. `versioning: Custom` still takes the version from the tag, not from git describe.
+On the runner only, the job writes IL2CPP, ARM64, the package id, and the player name into `ProjectSettings/ProjectSettings.asset` before `unity-builder`. It also sets `m_DisableAudio: 1` in `ProjectSettings/AudioManager.asset`. Unity 6000.5 otherwise aborts batchmode on this image after licensing (`ADTM: Attempting to update control while a mix is ongoing, but realtime thread is disabled will lead to a deadlock`). Those edits are not committed. The tag APK is built with Unity audio disabled, because the editor reads that setting while building. `allowDirtyBuild` is set because that patch dirties the checkout. `versioning: Custom` still takes the version from the tag, not from git describe.
 
 `game-ci/unity-builder`'s default build method applies `-buildVersion` and `-androidVersionCode` and turns on the custom keystore. A custom build method that ignores those flags is not used.
 

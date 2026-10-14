@@ -366,6 +366,29 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+# Unity 6000.5 on the game-ci image aborts batchmode after licensing with
+# "ADTM: Attempting to update control while a mix is ongoing, but realtime
+# thread is disabled will lead to a deadlock". That image has no realtime
+# audio thread. m_DisableAudio skips ADTM startup. The committed asset stays
+# at 0 so local and headset builds keep Unity audio; CI flips it per run.
+_AUDIO_ENABLED = "m_DisableAudio: 0"
+_AUDIO_DISABLED = "m_DisableAudio: 1"
+
+
+def disable_batchmode_audio(text: str) -> str:
+    enabled = text.count(_AUDIO_ENABLED)
+    disabled = text.count(_AUDIO_DISABLED)
+    if enabled == 0 and disabled == 1:
+        return text
+    if enabled != 1 or disabled != 0:
+        raise ReleaseError(
+            "ProjectSettings/AudioManager.asset must contain exactly one "
+            f"{_AUDIO_ENABLED!r} (found enabled={enabled}, disabled={disabled}). "
+            "Headless Unity 6000.5 aborts unless that editor run disables audio."
+        )
+    return text.replace(_AUDIO_ENABLED, _AUDIO_DISABLED, 1)
+
+
 def self_test() -> None:
     samples = [
         ("v1.0.0-rc1", "1.0.0-rc1", 10_000_001),
@@ -471,6 +494,30 @@ def self_test() -> None:
         raise ReleaseError("release.yml does not delete the workspace keystore")
     if "versioning: Custom" not in workflow:
         raise ReleaseError("release.yml must pass the tag as a Custom version")
+    tests_workflow = _read_text(root / ".github/workflows/unity-tests.yml")
+    for label, body in (("release.yml", workflow), ("unity-tests.yml", tests_workflow)):
+        if "disable-batchmode-audio" not in body:
+            raise ReleaseError(f"{label} does not disable Unity audio for headless batchmode")
+
+    audio_path = root / "ProjectSettings/AudioManager.asset"
+    committed_audio = _read_text(audio_path)
+    if _AUDIO_ENABLED not in committed_audio or _AUDIO_DISABLED in committed_audio:
+        raise ReleaseError("committed AudioManager.asset must keep Unity audio enabled")
+    disabled_audio = disable_batchmode_audio(committed_audio)
+    if disable_batchmode_audio(disabled_audio) != disabled_audio:
+        raise ReleaseError("batchmode audio disable is not idempotent")
+    if _AUDIO_ENABLED in disabled_audio or _AUDIO_DISABLED not in disabled_audio:
+        raise ReleaseError("batchmode audio disable did not flip m_DisableAudio")
+    with tempfile.TemporaryDirectory() as tmp:
+        sample = Path(tmp) / "AudioManager.asset"
+        sample.write_text("AudioManager:\n  m_DisableAudio: 0\n", encoding="utf-8", newline="\n")
+        if main(["disable-batchmode-audio", "--project", str(sample)]) != 0:
+            raise ReleaseError("disable-batchmode-audio command failed")
+        written = sample.read_text(encoding="utf-8")
+        if written != "AudioManager:\n  m_DisableAudio: 1\n":
+            raise ReleaseError(f"disable-batchmode-audio wrote {written!r}")
+        if main(["disable-batchmode-audio", "--project", str(sample)]) != 0:
+            raise ReleaseError("disable-batchmode-audio was not idempotent on disk")
     rendered = render_notes(
         template,
         {
@@ -492,6 +539,15 @@ def _cmd_version(args: argparse.Namespace) -> None:
     bundle, code = version_from_tag(args.tag)
     _github_kv("bundle_version", bundle)
     _github_kv("version_code", str(code))
+
+
+def _cmd_disable_batchmode_audio(args: argparse.Namespace) -> None:
+    path = Path(args.project)
+    text = _read_text(path)
+    patched = disable_batchmode_audio(text)
+    if patched != text:
+        path.write_bytes(patched.encode("utf-8"))
+    print("headless editor: m_DisableAudio 1 (ADTM batchmode deadlock workaround)", file=sys.stderr)
 
 
 def _cmd_patch(args: argparse.Namespace) -> None:
@@ -537,6 +593,10 @@ def build_parser() -> argparse.ArgumentParser:
     version_parser = sub.add_parser("version")
     version_parser.add_argument("--tag", required=True)
     version_parser.set_defaults(func=_cmd_version)
+
+    audio_parser = sub.add_parser("disable-batchmode-audio")
+    audio_parser.add_argument("--project", default="ProjectSettings/AudioManager.asset")
+    audio_parser.set_defaults(func=_cmd_disable_batchmode_audio)
 
     patch_parser = sub.add_parser("patch-settings")
     patch_parser.add_argument("--project", default="ProjectSettings/ProjectSettings.asset")
