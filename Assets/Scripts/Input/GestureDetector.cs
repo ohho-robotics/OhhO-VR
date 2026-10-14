@@ -128,6 +128,16 @@ namespace OmniBot.VR.Input
         }
 
         /// <summary>
+        /// High-confidence tracking only. Low confidence is treated as poor
+        /// so the arm falls back to controller joint jog instead of a noisy IK target.
+        /// </summary>
+        public bool IsHandTrackingGood(OVRHand hand)
+        {
+            if (hand == null || !hand.IsTracked) return false;
+            return hand.HandConfidence == OVRHand.TrackingConfidence.High;
+        }
+
+        /// <summary>
         /// Estimates hand velocity in m/s from the delta between this frame's
         /// raw position and the previously smoothed position.
         /// </summary>

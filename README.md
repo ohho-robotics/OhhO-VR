@@ -136,17 +136,33 @@ Connect expects a robot that is **not in this repository**. The headset opens a 
 
 | Gesture | Action |
 |---|---|
-| Right hand position (in workspace) | IK target for arm end-effector |
+| Right index trigger (hold) | Arm clutch — the arm moves only while this is held |
+| Right hand position (in workspace, clutch held, tracking good) | IK target, as motion relative to the pose where the clutch closed |
 | Right hand rotation | Wrist orientation target |
 | Right index–thumb pinch | Gripper close (pinch=1 → closed, pinch=0 → open) |
-| Left hand thumbs-up (hold 0.5 s) | Toggle arm enable/disable |
+| Left controller X | Arm enable. On a real robot, press again to confirm. Press while armed to turn off |
+| Left hand thumbs-up (hold 0.5 s) | Request arm enable, or turn it off. Does not confirm a real robot |
+| Right stick Y while clutch held and hand tracking is poor | Jog the selected joint |
+| Left stick click | Next jog joint |
 
 ---
 
 ## 7. Hand Tracking Arm Workspace
 
 The arm workspace maps the right hand's position within a 0.40 m radius sphere
-(centered on `handWorkspaceOrigin`) to the SO-101 arm's reachable space.
+(centered on `handWorkspaceOrigin`) to the SO-101 arm's reachable space. A wire
+sphere is drawn on that origin while teleop is running.
+
+Enabling the arm does not move it. Motion starts when the right index trigger
+closes, from the pose the arm already holds. A simulated garage robot enables
+on one request. Any other status, including a live robot, waits for a second
+Left X press before `/arm/enable` is published. Joint commands step at most
+0.15 rad, the same cap as the robot's arm safety node.
+
+SO-101 link lengths and kinematic zeros come from `RobotDescriptor`. Servo
+home ticks are not calibrated in this client (OHH-94). Until that measurement
+lands, joint homes stay at 0 rad. A video of this flow on the physical arm
+is still outstanding — do not treat sim tests as that recording.
 
 ```
               [Headset view — looking down]
@@ -301,7 +317,7 @@ The visionOS port is planned for a future release. Key design decisions:
 | Hand visible in one eye only | The hand meshes use `updateWhenOffscreen` so per-eye frustum culling can't drop them |
 | Camera feed shows "No Signal" | Ensure `web_video_server` is running: `ros2 run web_video_server web_video_server` |
 | Export fails | Check that an HTTP service answers on `http://<robot>:8765/health` and that the firewall allows port 8765; the bridge is not in this repo |
-| Arm not moving | Toggle arm enable with left-hand thumbs-up, check `/arm/enable` topic |
+| Arm not moving | Request enable with Left X or a thumbs-up. On a real robot press Left X again to confirm, then hold the right index trigger. The arm will not jump to the hand on enable |
 | UI looks low-res | `VRGraphicsBoost` sets 1.5× eye resolution at startup; check it exists on `[OhhO VR App]` |
 | Text renders magenta | The TMP font materials use `TextMeshPro/Distance Field`; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
 

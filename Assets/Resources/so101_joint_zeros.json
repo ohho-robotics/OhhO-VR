@@ -1,0 +1,5 @@
+{
+  "calibrated": false,
+  "jointZeroOffsetsRad": [0, 0, 0, 0, 0, 0],
+  "note": "OHH-94 (Varun, hardware) must measure the real SO-101. omnibot_arm/config/arm_params.yaml home_ticks is still the uncalibrated STS3215 midpoint 2048 x 6 — those ticks are NOT copied here. Kinematic joint zeros stay 0 rad until calibrated is set true with measured radian offsets. Do not invent servo home ticks. TODO(OHH-221): real-arm video of enable, clutch, workspace, and a pick is still outstanding; do not drive the physical arm from this client to film it."
+}

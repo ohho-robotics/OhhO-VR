@@ -8,9 +8,10 @@ namespace OmniBot.VR.Input
     /// Converts right-hand tracking into SO-101 arm joint commands published
     /// over ROSBridge at ARM_PUBLISH_HZ (20 Hz).
     ///
-    /// Arm enable/disable is toggled by a left-hand thumbs-up gesture
-    /// (thumb pointing upward while other fingers are curled).
-    /// When the arm is disabled, no joint commands are published.
+    /// Legacy component. The scene drives the arm through
+    /// <see cref="OmniBot.VR.Control.TeleopController"/>, which owns the
+    /// enable / REAL confirm / clutch gate (OHH-221). This component refuses
+    /// to torque the arm so it cannot bypass that gate.
     /// </summary>
     public class HandTrackingArmController : MonoBehaviour
     {
@@ -204,14 +205,21 @@ namespace OmniBot.VR.Input
             SetArmEnabled(!_armEnabled);
         }
 
-        /// <summary>Explicitly sets arm enable state and publishes /arm/enable.</summary>
+        /// <summary>
+        /// Disarm only. A true request is ignored — enable, REAL confirmation,
+        /// and the clutch live on <see cref="OmniBot.VR.Control.TeleopController"/>.
+        /// </summary>
         public void SetArmEnabled(bool enabled)
         {
-            _armEnabled = enabled;
-            Debug.Log($"[HandTrackingArmController] Arm {(enabled ? "enabled" : "disabled")}");
-
-            var boolMsg = new BoolMsg(enabled);
-            ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_ARM_ENABLE, boolMsg);
+            if (enabled)
+            {
+                Debug.LogWarning("[HandTrackingArmController] Ignoring arm enable. Use TeleopController (OHH-221 clutch + REAL confirm).");
+                return;
+            }
+            _armEnabled = false;
+            Debug.Log("[HandTrackingArmController] Arm disabled");
+            if (ROSBridgeClient.Instance != null && ROSBridgeClient.Instance.IsConnected)
+                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_ARM_ENABLE, new BoolMsg(false));
         }
 
         /// <summary>Whether the arm controller is currently active.</summary>

@@ -46,5 +46,18 @@ namespace OmniBot.VR.Control
         public Vector3 Position;
         public Quaternion Rotation;
         public float PinchStrength; // [0..1]
+
+        /// <summary>
+        /// High confidence follows the hand. Poor or none keeps the clutch on
+        /// controller joint jog instead of a noisy IK target.
+        /// </summary>
+        public HandTrackingQuality Quality;
+    }
+
+    public enum HandTrackingQuality
+    {
+        None = 0,
+        Poor = 1,
+        Good = 2,
     }
 }

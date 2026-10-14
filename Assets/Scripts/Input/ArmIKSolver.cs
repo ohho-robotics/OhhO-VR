@@ -22,7 +22,9 @@ namespace OmniBot.VR.Input
     public class ArmIKSolver
     {
         // ── Link geometry ────────────────────────────────────────────────────
-        // Link offsets in local joint space (metres).
+        // Lengths come from RobotDescriptor.So101 via RobotConfig — the same
+        // source RobotProfileFactory uses. Kinematic joint zero is 0 rad.
+        // TODO(OHH-94): do not bake STS3215 home ticks into this solver.
         // Joint 0 sits at ARM_BASE_HEIGHT above robot origin.
         private static readonly Vector3[] LinkOffsets =
         {
@@ -165,6 +167,24 @@ namespace OmniBot.VR.Input
             }
 
             return angles;
+        }
+
+        /// <summary>
+        /// End-effector position in the solver frame for the given joint angles.
+        /// Used to anchor the clutch so the first motion sample does not jump.
+        /// </summary>
+        public Vector3 ForwardEndEffector(float[] angles)
+        {
+            var pos = new Vector3[PositionJoints + 1];
+            var rot = new Quaternion[PositionJoints + 1];
+            var seed = new float[6];
+            if (angles != null)
+            {
+                int n = angles.Length < 6 ? angles.Length : 6;
+                for (int i = 0; i < n; i++) seed[i] = angles[i];
+            }
+            ForwardKinematics(seed, pos, rot, PositionJoints);
+            return pos[PositionJoints];
         }
 
         /// <summary>

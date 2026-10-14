@@ -1,0 +1,19 @@
+{
+    "name": "OmniBot.VR",
+    "rootNamespace": "OmniBot.VR",
+    "references": [
+        "Oculus.VR",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI",
+        "endel.nativewebsocket"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

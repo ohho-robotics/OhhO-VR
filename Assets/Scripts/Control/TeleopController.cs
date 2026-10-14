@@ -61,11 +61,18 @@ namespace OmniBot.VR.Control
         public string DriveHint => _drive?.HudHint ?? "No drive on this robot";
         /// <summary>One-line manipulation control hint (for onboarding / HUD).</summary>
         public string ManipHint => _manip?.HudHint ?? "No arm on this robot";
+        /// <summary>Live arm-gate status (enable, REAL confirm, clutch, jog).</summary>
+        public string ArmStatus => _manip?.StatusText ?? "";
 
         // ── Thumbs-up gesture state (ported from HandTrackingArmController) ──────
         private bool _wasThumbsUp;
         private float _thumbsUpHoldTimer;
         private const float ThumbsUpHoldRequired = 0.5f;
+        private const float ClutchTriggerThreshold = 0.6f;
+
+        private bool _originOwned;
+        private GameObject _ownedOrigin;
+        private WorkspaceSphereVisual _workspaceVisual;
 
         // ── Previous both-grips state for edge detection ─────────────────────────
         private bool _prevBothGrips;
@@ -109,18 +116,57 @@ namespace OmniBot.VR.Control
                 _drive.Tick(ref input, Link);
 
             // ── Manipulation (hand poses) ────────────────────────────────────────
-            if (_manip != null && gestureDetector != null)
+            // Runs without a GestureDetector so controller jog and the enable
+            // button still work when hand tracking is absent.
+            if (_manip != null)
             {
-                HandPose rightHand = BuildHandPose(gestureDetector.rightHand);
-                HandPose leftHand = BuildHandPose(gestureDetector.leftHand);
+                HandPose rightHand = default;
+                HandPose leftHand = default;
+                bool trackingGood = false;
+                if (gestureDetector != null)
+                {
+                    rightHand = BuildHandPose(gestureDetector.rightHand);
+                    leftHand = BuildHandPose(gestureDetector.leftHand);
+                    trackingGood = rightHand.Quality == HandTrackingQuality.Good;
+                    TickThumbsUpToggle(gestureDetector.leftHand);
+                }
 
-                // Thumbs-up gesture drives arm-enable toggle (needs the OVRHand ref
-                // for the skeleton-based check, like the legacy controller).
-                TickThumbsUpToggle(gestureDetector.leftHand);
+                bool clutch = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger, OVRInput.Controller.RTouch) >= ClutchTriggerThreshold
+                    || OVRInput.Get(OVRInput.Button.SecondaryIndexTrigger, OVRInput.Controller.RTouch);
+                bool xDown = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch);
+                bool cycleJoint = OVRInput.GetDown(OVRInput.Button.PrimaryThumbstick, OVRInput.Controller.LTouch);
+                bool thumbsPulse = _thumbsUpPulse;
+                _thumbsUpPulse = false;
 
+                var armInput = new ArmOperatorInput
+                {
+                    ClutchHeld = clutch,
+                    TrackingGood = trackingGood,
+                    JogAxis = rightStick.y,
+                    CycleJointPressed = cycleJoint,
+                    EmergencyStop = bothGrips,
+                    DeltaTime = Time.deltaTime,
+                };
+                // Left X confirms a pending REAL enable. A thumbs-up never does.
+                // Either control disarms immediately, and either requests enable
+                // when the arm is off. One press cannot both request and confirm.
+                var phase = _manip.EnablePhase;
+                if (phase == ArmEnablePhase.AwaitingRealConfirmation && xDown)
+                    armInput.ConfirmRequested = true;
+                else if (phase == ArmEnablePhase.Armed && (xDown || thumbsPulse))
+                    armInput.DisarmRequested = true;
+                else if (phase == ArmEnablePhase.Off && (xDown || thumbsPulse))
+                    armInput.EnableRequested = true;
+
+                _manip.FeedArmInput(armInput);
                 _manip.Tick(ref rightHand, ref leftHand, Link);
+
+                if (_workspaceVisual != null)
+                    _workspaceVisual.SetAppearance(_manip.EnablePhase, _manip.ClutchEngaged, trackingGood);
             }
         }
+
+        private bool _thumbsUpPulse;
 
         // ── Public API (called by GaragePanelController / OhhoVrApp) ──────────────
 
@@ -135,8 +181,12 @@ namespace OmniBot.VR.Control
             StopTeleop();
 
             Profile = profile;
+            if (profile.HasArm)
+                EnsureWorkspaceOrigin(profile);
             _drive = ControlSchemeFactory.CreateDriveScheme(profile);
             _manip = ControlSchemeFactory.CreateManipulationScheme(profile, handWorkspaceOrigin);
+            if (profile.HasArm)
+                EnsureWorkspaceVisual(profile);
 
             AdvertiseTopics(profile);
             _teleopActive = true;
@@ -160,10 +210,43 @@ namespace OmniBot.VR.Control
             _teleopActive = false;
             _wasThumbsUp = false;
             _thumbsUpHoldTimer = 0f;
+            _thumbsUpPulse = false;
+            if (_workspaceVisual != null)
+            {
+                Destroy(_workspaceVisual.gameObject);
+                _workspaceVisual = null;
+            }
+            if (_originOwned && _ownedOrigin != null)
+            {
+                Destroy(_ownedOrigin);
+                _ownedOrigin = null;
+                handWorkspaceOrigin = null;
+                _originOwned = false;
+            }
         }
 
         /// <summary>Whether a robot is currently being teleoperated.</summary>
         public bool IsTeleopActive => _teleopActive;
+
+        private void EnsureWorkspaceOrigin(RobotProfile profile)
+        {
+            if (handWorkspaceOrigin != null || profile == null) return;
+            _ownedOrigin = new GameObject("HandWorkspaceOrigin");
+            _ownedOrigin.transform.position = new Vector3(0f, profile.ArmBaseHeight, 0f);
+            handWorkspaceOrigin = _ownedOrigin.transform;
+            _originOwned = true;
+        }
+
+        private void EnsureWorkspaceVisual(RobotProfile profile)
+        {
+            if (handWorkspaceOrigin == null || profile == null) return;
+            var go = new GameObject("ArmWorkspaceSphere");
+            go.transform.SetParent(handWorkspaceOrigin, false);
+            _workspaceVisual = go.AddComponent<WorkspaceSphereVisual>();
+            _workspaceVisual.Configure(profile.HandWorkspaceRadius > 0f
+                ? profile.HandWorkspaceRadius
+                : RobotDescriptor.So101.HandWorkspaceRadius);
+        }
 
         // ── Input helpers ─────────────────────────────────────────────────────────
 
@@ -172,9 +255,11 @@ namespace OmniBot.VR.Control
             if (gestureDetector == null || hand == null || !gestureDetector.IsHandTracked(hand))
                 return default;
 
+            bool good = gestureDetector.IsHandTrackingGood(hand);
             return new HandPose
             {
                 Tracked = true,
+                Quality = good ? HandTrackingQuality.Good : HandTrackingQuality.Poor,
                 Position = gestureDetector.GetHandPosition(hand),
                 Rotation = gestureDetector.GetHandRotation(hand),
                 PinchStrength = gestureDetector.GetPinchStrength(hand),
@@ -193,10 +278,8 @@ namespace OmniBot.VR.Control
                 _thumbsUpHoldTimer += Time.deltaTime;
                 if (!_wasThumbsUp && _thumbsUpHoldTimer >= ThumbsUpHoldRequired)
                 {
-                    if (_manip is HandIK6DofScheme handIk)
-                        handIk.ToggleArmEnabled(Link);
-                    else
-                        _manip.SetArmEnabled(!_manip.ArmEnabled, Link);
+                    // Request only. REAL confirmation is Left X, not this gesture.
+                    _thumbsUpPulse = true;
                     _wasThumbsUp = true;
                 }
             }
