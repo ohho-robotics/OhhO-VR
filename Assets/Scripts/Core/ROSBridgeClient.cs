@@ -137,6 +137,14 @@ namespace OmniBot.VR.Core
             SendJson(JsonConvert.SerializeObject(msg));
         }
 
+        /// <summary>
+        /// Fired after a message has been handed to the socket. Not fired when the
+        /// publish is dropped because the socket is closed. Observers must not
+        /// change connection, drive, or e-stop behavior; exceptions are logged
+        /// and swallowed so a metric cannot block the send.
+        /// </summary>
+        public static event Action<string, object> MessagePublished;
+
         /// <summary>Serializes and publishes a message to a ROS topic.</summary>
         public void Publish<T>(string topic, T msg)
         {
@@ -147,6 +155,21 @@ namespace OmniBot.VR.Core
             }
             var wrapper = new ROSPublishMessage<T>(topic, msg);
             SendJson(JsonConvert.SerializeObject(wrapper));
+            NotifyPublished(topic, msg);
+        }
+
+        private static void NotifyPublished(string topic, object msg)
+        {
+            var handler = MessagePublished;
+            if (handler == null) return;
+            try
+            {
+                handler.Invoke(topic, msg);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ROSBridgeClient] MessagePublished observer failed: {ex.Message}");
+            }
         }
 
         /// <summary>
