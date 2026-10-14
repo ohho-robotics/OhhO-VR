@@ -1,0 +1,24 @@
+name: Latency harness
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fake-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Unit and fake-link tests
+        run: dotnet test tests/LatencyHarness.Tests/LatencyHarness.Tests.csproj --nologo
+
+      - name: Log summary tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py"

@@ -1,0 +1,21 @@
+{
+  "hardware_run": false,
+  "note": "Fill measured_p50_ms, measured_p95_ms, and n from a hardware log. Leave them null until then. A fake-link log is not a field result.",
+  "rows": [
+    {"profile": "local", "segment": "input_to_command", "budget_p95_ms": 25, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "local", "segment": "command_to_motion", "budget_p95_ms": 100, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "local", "segment": "glass_to_glass", "budget_p95_ms": 120, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "local", "segment": "telemetry_age", "budget_p95_ms": 50, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "local", "segment": "heartbeat_age", "budget_p95_ms": 50, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "cloud", "segment": "input_to_command", "budget_p95_ms": 80, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "cloud", "segment": "command_to_motion", "budget_p95_ms": 250, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "cloud", "segment": "glass_to_glass", "budget_p95_ms": 300, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "cloud", "segment": "telemetry_age", "budget_p95_ms": 200, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "cloud", "segment": "heartbeat_age", "budget_p95_ms": 200, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "real", "segment": "input_to_command", "budget_p95_ms": 40, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "real", "segment": "command_to_motion", "budget_p95_ms": 200, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "real", "segment": "glass_to_glass", "budget_p95_ms": 180, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "real", "segment": "telemetry_age", "budget_p95_ms": 80, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"},
+    {"profile": "real", "segment": "heartbeat_age", "budget_p95_ms": 80, "measured_p50_ms": null, "measured_p95_ms": null, "n": null, "verdict": "not_measured"}
+  ]
+}

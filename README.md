@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (58 tests in namespace `OmniBot.VR.Tests`). CI skips the Unity runner until the licence secrets are set. The latency-budget fixtures in that namespace also run without Unity. Run the Unity suite locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -95,6 +95,13 @@ Linux:
 
 ```
 unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmode -testFilter OmniBot.VR.Tests -testResults <xml> -logFile <log>
+```
+
+Latency budgets and the empty results template are in `docs/LATENCY_BUDGETS.md`. The fake-link fixtures do not need a Quest or a robot:
+
+```
+dotnet test tests/LatencyHarness.Tests/LatencyHarness.Tests.csproj
+python -m unittest discover -s scripts -p "test_*.py"
 ```
 
 ---
@@ -267,6 +274,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── VRGraphicsBoost.cs   # 1.5× resolution + MSAA + FFR + 90 Hz
 │   │   │   └── RobotConfig.cs      # All constants
 │   │   ├── Control/            # RobotProfile, TeleopController, drive/manip schemes
+│   │   ├── Latency/            # latency budgets and the measurement log
 │   │   ├── Input/
 │   │   │   ├── ArmIKSolver.cs      # CCD IK solver (pure C#)
 │   │   │   ├── GestureDetector.cs  # OVR hand tracking

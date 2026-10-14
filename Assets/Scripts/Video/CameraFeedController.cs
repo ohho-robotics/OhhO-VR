@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using OmniBot.VR.Control;
+using OmniBot.VR.Latency;
 
 namespace OmniBot.VR.Video
 {
@@ -154,6 +155,17 @@ namespace OmniBot.VR.Video
 
         private void OnVideoFrame(Texture2D frame)
         {
+            if (LatencyCapture.IsEnabled)
+            {
+                long? capture = null;
+                MjpegVideoSource mjpeg = _activeSource as MjpegVideoSource;
+                if (mjpeg != null) capture = mjpeg.LastCaptureUnixMs;
+                string transport = _activeSource != null ? _activeSource.TransportName : "";
+                LatencyCapture.NoteVideoFrame(
+                    capture,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    transport);
+            }
             if (displayImage != null)
             {
                 displayImage.color = Color.white; // full brightness once streaming

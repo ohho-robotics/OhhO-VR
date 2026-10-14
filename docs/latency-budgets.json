@@ -1,0 +1,27 @@
+{
+  "unit": "ms",
+  "statistic": "p95",
+  "profiles": {
+    "local": {
+      "input_to_command": 25,
+      "command_to_motion": 100,
+      "glass_to_glass": 120,
+      "telemetry_age": 50,
+      "heartbeat_age": 50
+    },
+    "cloud": {
+      "input_to_command": 80,
+      "command_to_motion": 250,
+      "glass_to_glass": 300,
+      "telemetry_age": 200,
+      "heartbeat_age": 200
+    },
+    "real": {
+      "input_to_command": 40,
+      "command_to_motion": 200,
+      "glass_to_glass": 180,
+      "telemetry_age": 80,
+      "heartbeat_age": 80
+    }
+  }
+}
