@@ -43,4 +43,10 @@ if define_at < 0 or using_at < 0 or define_at > using_at:
 print("define-order ok")
 PY
 
+for f in docs/distribution/sideload.md docs/distribution/horizon-store-checklist.md docs/distribution/privacy-policy.md scripts/bump-quest-version.py .github/workflows/quest-release.yml; do
+  test -f "$f" || fail "$f is missing"
+done
+grep -q 'docs/distribution/sideload.md' README.md || fail "README does not link the sideload guide"
+grep -q 'docs/distribution/horizon-store-checklist.md' README.md || fail "README does not link the Horizon Store checklist"
+
 echo "check-public-docs: ok"
