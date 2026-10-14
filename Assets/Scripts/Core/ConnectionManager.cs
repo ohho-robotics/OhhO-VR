@@ -123,6 +123,20 @@ namespace OmniBot.VR.Core
             ROSBridgeClient.Instance.Connect(url);
         }
 
+        /// <summary>
+        /// Connects to a session endpoint. Keeps <see cref="Connect"/> for manual
+        /// IP entry; cloud targets can pass a full <c>wss://</c> URL.
+        /// </summary>
+        public void ConnectEndpoint(OmniBot.VR.Control.Session.RobotEndpoint endpoint)
+        {
+            if (endpoint == null || endpoint.Offline || string.IsNullOrEmpty(endpoint.RosbridgeUrl))
+                return;
+            if (!string.IsNullOrEmpty(endpoint.Host)) CurrentIp = endpoint.Host;
+            if (endpoint.Port > 0) CurrentPort = endpoint.Port;
+            Debug.Log($"[ConnectionManager] Connecting to {endpoint.RosbridgeUrl}");
+            ROSBridgeClient.Instance.Connect(endpoint.RosbridgeUrl);
+        }
+
         /// <summary>Unsubscribes from all topics, then disconnects cleanly.</summary>
         public void Disconnect()
         {

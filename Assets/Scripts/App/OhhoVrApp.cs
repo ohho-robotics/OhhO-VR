@@ -1,14 +1,17 @@
 using UnityEngine;
+using OmniBot.VR.Core;
 using OmniBot.VR.Core.Platform;
 using OmniBot.VR.Control;
+using OmniBot.VR.Control.Session;
 using OmniBot.VR.UI;
 using OmniBot.VR.UI.Garage;
+using OmniBot.VR.UI.Session;
 
 namespace OmniBot.VR.App
 {
     /// <summary>
     /// Top-level app flow for the OhhO VR headset — mirrors the website's own
-    /// journey: <b>sign in → console (VR products) → open Pilot → garage → teleop</b>.
+    /// journey: <b>sign in → console (VR products) → open Pilot → garage → simulate or drive real → teleop</b>.
     ///
     /// It wires the platform services together once the manifest loads (so the
     /// Supabase auth + garage clients get the same project the website uses), then
@@ -25,7 +28,9 @@ namespace OmniBot.VR.App
         [SerializeField] private GameObject loginPanel;
         [SerializeField] private GameObject consolePanel;
         [SerializeField] private GameObject garagePanel;
-        [Tooltip("The teleop page shown after a robot is picked (camera feed, telemetry, recording).")]
+        [Tooltip("Simulate / Drive real, shown after a garage pick and before teleop.")]
+        [SerializeField] private GameObject sessionPickerPanel;
+        [Tooltip("The teleop page shown after a session target is chosen (camera feed, telemetry, recording).")]
         [SerializeField] private GameObject teleopPanel;
         [SerializeField] private GameObject cameraPanel;
         [SerializeField] private GameObject controlsPanel;
@@ -46,6 +51,13 @@ namespace OmniBot.VR.App
         [Header("Phase 5 — polish")]
         [Tooltip("First-run onboarding overlay. Shows control hints on the first teleop session.")]
         [SerializeField] private OnboardingController onboarding;
+
+        private SessionPickerPanel _picker;
+        private bool _pickerHooked;
+        private RobotProfile _pendingProfile;
+        private string _pendingName;
+        private string _pendingUserRobotId;
+        private OfflineKinematicLink _offlineLink;
 
         private void Awake()
         {
@@ -76,6 +88,7 @@ namespace OmniBot.VR.App
                 fleetPanelController.RobotPicked -= OnRobotPicked;
                 fleetPanelController.QuickResume -= OnQuickResume;
             }
+            UnhookPicker();
         }
 
         private void Start()
@@ -106,9 +119,19 @@ namespace OmniBot.VR.App
         public void ShowLogin() => Activate(login: true, console: false, garage: false, teleop: false);
         public void ShowConsole() => Activate(login: false, console: true, garage: false, teleop: false);
         public void ShowGarage() => Activate(login: false, console: false, garage: true, teleop: false);
-        public void ShowTeleop() => Activate(login: false, console: false, garage: false, teleop: true, camera: true, controls: true);
+        public void ShowSessionPicker()
+        {
+            EnsurePicker();
+            Activate(login: false, console: false, garage: false, teleop: false, session: true);
+        }
+        public void ShowTeleop()
+        {
+            Activate(login: false, console: false, garage: false, teleop: true, camera: true, controls: true);
+            if (ActiveSession.Current != null)
+                PaintSessionBanners(ActiveSession.Current.Kind);
+        }
 
-        private void Activate(bool login, bool console, bool garage, bool teleop, bool camera = false, bool controls = false)
+        private void Activate(bool login, bool console, bool garage, bool teleop, bool camera = false, bool controls = false, bool session = false)
         {
             if (loginPanel != null) loginPanel.SetActive(login);
             if (consolePanel != null) consolePanel.SetActive(console);
@@ -116,6 +139,7 @@ namespace OmniBot.VR.App
             if (teleopPanel != null) teleopPanel.SetActive(teleop);
             if (cameraPanel != null) cameraPanel.SetActive(camera);
             if (controlsPanel != null) controlsPanel.SetActive(controls);
+            if (sessionPickerPanel != null) sessionPickerPanel.SetActive(session);
         }
 
         /// <summary>Open ohho-robotics.com in the headset's system browser.</summary>
@@ -128,43 +152,13 @@ namespace OmniBot.VR.App
         // ── Phase 2: robot selection → teleop ──────────────────────────────────
 
         /// <summary>
-        /// Called when the user picks a robot in the garage. Builds the
-        /// <see cref="RobotProfile"/> from the catalog entry (drive kind + arm DOF
-        /// + topics + limits), hands it to the <see cref="TeleopController"/>, and
-        /// routes to the teleop view. This is the connected-experience payoff:
-        /// pick a robot, start driving it.
+        /// Called when the user picks a robot in the garage. Builds the profile,
+        /// then opens the session picker (Simulate / Drive real) instead of
+        /// jumping straight to teleop.
         /// </summary>
-        private void OnRobotPicked(Core.Platform.GarageRobot robot)
+        private void OnRobotPicked(GarageRobot robot)
         {
-            if (robot == null) return;
-            var profile = RobotProfileFactory.FromGarageRobot(robot);
-            if (profile == null)
-            {
-                Debug.LogWarning($"[OhhoVrApp] Could not build a profile for {robot.DisplayName}.");
-                return;
-            }
-            if (teleopController == null)
-            {
-                Debug.LogWarning("[OhhoVrApp] TeleopController not assigned — cannot start teleop.");
-                return;
-            }
-
-            // Phase 5: apply per-robot calibration (workspace offsets, IK location, velocity caps)
-            var cal = CalibrationManager.Load(profile.RobotId);
-            CalibrationManager.ApplyTo(profile, cal);
-
-            // Save as the last robot for quick-resume
-            var conn = OmniBot.VR.Core.ConnectionManager.Instance;
-            LastRobotStore.Save(profile.RobotId, robot.DisplayName,
-                conn != null ? conn.CurrentIp : "192.168.1.101",
-                conn != null ? conn.CurrentPort : 9090);
-
-            teleopController.StartTeleop(profile);
-            ShowTeleop();
-
-            // Phase 5: show onboarding hints on the first session
-            if (onboarding != null)
-                onboarding.ShowIfFirstTime(teleopController.DriveHint, teleopController.ManipHint);
+            BeginRobot(robot, quickResume: false);
         }
 
         /// <summary>
@@ -200,7 +194,7 @@ namespace OmniBot.VR.App
                 if (match == null) { ShowGarage(); return; }
                 var resolved = catalog.Resolve(match);
                 if (resolved == null) { ShowGarage(); return; }
-                OnRobotPicked(resolved);
+                BeginRobot(resolved, quickResume: true);
             });
         }
 
@@ -209,6 +203,193 @@ namespace OmniBot.VR.App
         {
             if (teleopController != null) teleopController.StopTeleop();
             ShowGarage();
+        }
+
+        // ── Session picker ────────────────────────────────────────────────────
+
+        private void BeginRobot(GarageRobot robot, bool quickResume)
+        {
+            if (robot == null) return;
+            var profile = RobotProfileFactory.FromGarageRobot(robot);
+            if (profile == null)
+            {
+                Debug.LogWarning($"[OhhoVrApp] Could not build a profile for {robot.DisplayName}.");
+                return;
+            }
+            if (teleopController == null)
+            {
+                Debug.LogWarning("[OhhoVrApp] TeleopController not assigned — cannot start teleop.");
+                return;
+            }
+
+            var cal = CalibrationManager.Load(profile.RobotId);
+            CalibrationManager.ApplyTo(profile, cal);
+
+            _pendingProfile = profile;
+            _pendingName = robot.DisplayName;
+            _pendingUserRobotId = robot.UserRobot != null ? robot.UserRobot.Id : null;
+
+            RobotEndpoint saved = null;
+            bool hasChoice = LastRobotStore.TryLoadChoice(profile.RobotId, out saved);
+            if (!hasChoice && !string.IsNullOrEmpty(_pendingUserRobotId))
+                hasChoice = LastRobotStore.TryLoadChoice(_pendingUserRobotId, out saved);
+
+            // Quick-resume of a sim target skips the picker. A real robot still
+            // stops on the safety notice — resume must not skip that.
+            if (quickResume && hasChoice && saved != null && saved.Kind == SessionKind.Sim)
+            {
+                OnSessionConfirmed(SessionPlanner.FromSaved(saved, safetyAcknowledged: false, tutorialSeen: true));
+                return;
+            }
+
+            string ip = EndpointAddresses.DefaultIp;
+            int port = EndpointAddresses.RosbridgePort;
+            if (hasChoice && saved != null && !string.IsNullOrEmpty(saved.Host))
+            {
+                ip = saved.Host;
+                if (saved.Port > 0) port = saved.Port;
+            }
+            else
+            {
+                var conn = ConnectionManager.Instance;
+                if (conn != null)
+                {
+                    ip = conn.CurrentIp;
+                    port = conn.CurrentPort;
+                }
+            }
+
+            var step = quickResume && hasChoice && saved != null && saved.Kind == SessionKind.Real
+                ? PickerStep.RealSafety
+                : PickerStep.Mode;
+            EnsurePicker();
+            ShowSessionPicker();
+            _picker.Open(profile.RobotId, _pendingUserRobotId, robot.DisplayName, ip, port, step);
+        }
+
+        private void OnSessionConfirmed(SessionLaunch plan)
+        {
+            if (plan == null || !plan.ReadyToDrive || plan.Endpoint == null || _pendingProfile == null) return;
+            if (teleopController == null) return;
+            if (!plan.DeadmanRequired)
+            {
+                Debug.LogWarning("[OhhoVrApp] Refusing a session that would turn the deadman off.");
+                return;
+            }
+
+            var endpoint = plan.Endpoint;
+            if (endpoint.Kind == SessionKind.Real)
+                endpoint.Offline = false;
+
+            if (!endpoint.Offline && (endpoint.VideoUrls == null || endpoint.VideoUrls.Count == 0))
+                endpoint.VideoUrls = EndpointAddresses.VideoUrlsFor(endpoint.Host, _pendingProfile.Topics != null
+                    ? _pendingProfile.Topics.Images
+                    : null);
+
+            RealRobotSafety.Apply(_pendingProfile, endpoint.Kind);
+            if (endpoint.Kind == SessionKind.Real && !_pendingProfile.RequireDeadman)
+            {
+                Debug.LogWarning("[OhhoVrApp] Refusing real teleop because the deadman is off.");
+                return;
+            }
+
+            ActiveSession.Set(endpoint);
+            string host = endpoint.Offline ? "in-headset" : endpoint.Host;
+            int port = endpoint.Port > 0 ? endpoint.Port : EndpointAddresses.RosbridgePort;
+            LastRobotStore.Save(_pendingProfile.RobotId, _pendingName, host, port, endpoint);
+            if (!string.IsNullOrEmpty(_pendingUserRobotId) && _pendingUserRobotId != _pendingProfile.RobotId)
+            {
+                LastRobotStore.SaveChoice(_pendingUserRobotId, endpoint);
+                LastRobotStore.RememberAlias(_pendingUserRobotId);
+            }
+
+            if (endpoint.Offline)
+            {
+                var conn = ConnectionManager.Instance;
+                if (conn != null && conn.IsConnected) conn.Disconnect();
+                if (_offlineLink == null) _offlineLink = new OfflineKinematicLink();
+                _offlineLink.IsConnected = true;
+                teleopController.SetLink(_offlineLink);
+            }
+            else
+            {
+                teleopController.SetLink(null);
+                ConnectionManager.Instance.ConnectEndpoint(endpoint);
+            }
+
+            teleopController.StartTeleop(_pendingProfile);
+            ShowTeleop();
+            PaintSessionBanners(endpoint.Kind);
+
+            if (onboarding != null)
+                onboarding.ShowIfFirstTime(teleopController.DriveHint, teleopController.ManipHint);
+        }
+
+        private void PaintSessionBanners(SessionKind kind)
+        {
+            SessionModeBanner.Apply(teleopPanel, kind);
+            SessionModeBanner.Apply(cameraPanel, kind);
+            SessionModeBanner.Apply(controlsPanel, kind);
+            SessionModeBanner.Apply(garagePanel, kind);
+            SessionModeBanner.Apply(SessionPage, kind);
+        }
+
+        private GameObject SessionPage => _picker != null ? _picker.gameObject : sessionPickerPanel;
+
+        private void EnsurePicker()
+        {
+            if (_picker != null)
+            {
+                HookPicker();
+                return;
+            }
+
+            if (sessionPickerPanel != null)
+            {
+                _picker = sessionPickerPanel.GetComponent<SessionPickerPanel>();
+                if (_picker == null) _picker = sessionPickerPanel.AddComponent<SessionPickerPanel>();
+            }
+            else
+            {
+                var parent = garagePanel != null ? garagePanel.transform.parent : transform;
+                var go = new GameObject("Session Page", typeof(RectTransform));
+                go.transform.SetParent(parent, false);
+                if (garagePanel != null)
+                {
+                    var src = garagePanel.GetComponent<RectTransform>();
+                    var dst = (RectTransform)go.transform;
+                    dst.anchorMin = src.anchorMin;
+                    dst.anchorMax = src.anchorMax;
+                    dst.pivot = src.pivot;
+                    dst.anchoredPosition = src.anchoredPosition;
+                    dst.sizeDelta = src.sizeDelta;
+                    dst.offsetMin = src.offsetMin;
+                    dst.offsetMax = src.offsetMax;
+                    dst.localRotation = src.localRotation;
+                    dst.localScale = src.localScale;
+                }
+                go.SetActive(false);
+                _picker = go.AddComponent<SessionPickerPanel>();
+                sessionPickerPanel = go;
+            }
+
+            HookPicker();
+        }
+
+        private void HookPicker()
+        {
+            if (_pickerHooked || _picker == null) return;
+            _picker.Confirmed += OnSessionConfirmed;
+            _picker.Cancelled += ShowGarage;
+            _pickerHooked = true;
+        }
+
+        private void UnhookPicker()
+        {
+            if (!_pickerHooked || _picker == null) return;
+            _picker.Confirmed -= OnSessionConfirmed;
+            _picker.Cancelled -= ShowGarage;
+            _pickerHooked = false;
         }
     }
 }

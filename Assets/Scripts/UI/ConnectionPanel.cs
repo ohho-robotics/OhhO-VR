@@ -72,6 +72,7 @@ namespace OmniBot.VR.UI
 
             // Hide error label initially
             if (errorLabel != null) errorLabel.gameObject.SetActive(false);
+            PaintSessionBanner();
         }
 
         private void OnDestroy()
@@ -134,6 +135,14 @@ namespace OmniBot.VR.UI
         {
             _connecting = false;
             RefreshUI(connected);
+            PaintSessionBanner();
+        }
+
+        private void PaintSessionBanner()
+        {
+            var session = OmniBot.VR.Control.Session.ActiveSession.Current;
+            if (session == null) return;
+            Session.SessionModeBanner.Apply(gameObject, session.Kind);
         }
 
         private void OnConnectionError(string error)

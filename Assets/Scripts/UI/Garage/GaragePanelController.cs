@@ -12,8 +12,8 @@ namespace OmniBot.VR.UI.Garage
     /// The teleop garage — the user's saved robots, pulled from Supabase
     /// (`user_robots`) the moment they open Pilot. This is the connected
     /// experience in action: a robot added on the website or Android app is
-    /// already here, no re-entry. Selecting one will start teleoperation with the
-    /// robot's profile (Phase 2).
+    /// already here, no re-entry. Selecting one opens the session picker
+    /// (Simulate or Drive real) before teleop.
     /// </summary>
     public class GaragePanelController : MonoBehaviour
     {
@@ -123,7 +123,7 @@ namespace OmniBot.VR.UI.Garage
             // Hand the picked robot to the teleop layer. OhhoVrApp subscribes to
             // RobotPicked, builds the RobotProfile from the catalog entry, and
             // calls TeleopController.StartTeleop — the Phase 2 spine.
-            SetStatus($"Selected {robot.DisplayName} — starting teleop…");
+            SetStatus($"Selected {robot.DisplayName} — choose simulate or drive real");
             RobotPicked?.Invoke(robot);
         }
 

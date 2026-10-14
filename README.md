@@ -11,7 +11,7 @@ in front of you in passthrough and always faces you. It is the headset-native
 front end of **ohho-robotics.com**: the same Supabase account, the same garage
 of robots, the same branding — sign in once and everything is already there.
 
-Flow: **Login → Console (VR products) → Garage (your robots) → Teleop** —
+Flow: **Login → Console (VR products) → Garage (your robots) → Simulate or Drive real → Teleop** —
 all inside the one screen. A `WorldSpaceUiPlacer` parks it 1.6 m ahead and
 gently billboards it toward you; press **left-controller B** to hide/show it.
 
@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (60 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -110,9 +110,17 @@ unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmo
    the website and Android app. Empty? Add a robot on ohho-robotics.com
    (or the app) — it appears here automatically. The header's **Open Website**
    button launches the site in the Quest browser.
-6. **Pick a robot** → the **Teleop** page opens. Enter the robot's IP
-   (default `192.168.1.101`) and port (default `9090`) → **Connect**.
-   The status dot turns green when connected.
+6. **Pick a robot** → choose **Simulate** or **Drive real**.
+   - **Simulate → Local desktop** uses a registry session if one is listed, or the
+     IP already filled in (default `192.168.1.101`, port `9090`) and opens Teleop.
+     From the garage that is three clicks: the robot, Simulate, Local desktop.
+   - **Cloud** starts a session when an orchestrator is configured, or attaches to
+     a `wss://` rosbridge URL.
+   - **In-headset** is an offline demo. It does not open a socket.
+   - **Drive real** shows a safety notice, and a deadman tutorial the first time,
+     before an announced robot or a manual IP. The deadman stays on for a real robot.
+   The Teleop status dot turns green when a network session connects. A blue **SIM**
+   or orange **REAL** banner stays on the teleop, camera, and controls pages.
 
 Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view expects MJPEG from `web_video_server` on port `8080`. Those processes live on the robot PC. This repo does not ship them.
 
@@ -202,7 +210,7 @@ Tweak the values in the inspector on `[OhhO VR App] → VRGraphicsBoost`.
 
 ## 9. Dataset Recording Workflow
 
-1. Open the **Teleop** page (pick a robot in the garage).
+1. Open the **Teleop** page (pick a robot, then Simulate or Drive real).
 2. Press **Start Recording**. The status shows the episode name + live timer.
 3. Perform the demonstration — all arm states, odometry, and commands are
    captured at 30 Hz locally on the headset.
@@ -258,7 +266,7 @@ The visionOS port is planned for a future release. Key design decisions:
 ├── Assets/
 │   ├── scene1.unity            # the only enabled build scene
 │   ├── Scripts/
-│   │   ├── App/OhhoVrApp.cs    # login→console→garage→teleop routing (singleton)
+│   │   ├── App/OhhoVrApp.cs    # login→console→garage→session→teleop routing
 │   │   ├── Core/
 │   │   │   ├── Messages/       # ROSBridge JSON message types
 │   │   │   ├── Platform/       # manifest/catalog/Supabase/garage clients
@@ -266,7 +274,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── ConnectionManager.cs # Connection lifecycle (singleton)
 │   │   │   ├── VRGraphicsBoost.cs   # 1.5× resolution + MSAA + FFR + 90 Hz
 │   │   │   └── RobotConfig.cs      # All constants
-│   │   ├── Control/            # RobotProfile, TeleopController, drive/manip schemes
+│   │   ├── Control/            # RobotProfile, TeleopController, drive/manip, session targets
 │   │   ├── Input/
 │   │   │   ├── ArmIKSolver.cs      # CCD IK solver (pure C#)
 │   │   │   ├── GestureDetector.cs  # OVR hand tracking
@@ -279,6 +287,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── Auth/LoginPanelController.cs
 │   │   │   ├── Console/ConsolePanelController.cs
 │   │   │   ├── Garage/GaragePanelController.cs
+│   │   │   ├── Session/SessionPickerPanel.cs # Simulate / Drive real, then a target
 │   │   │   ├── TeleopHudController.cs # connection+telemetry+camera+recording+export
 │   │   │   └── ...
 │   │   ├── Video/              # MJPEG camera feed; WebRTC source is roadmap

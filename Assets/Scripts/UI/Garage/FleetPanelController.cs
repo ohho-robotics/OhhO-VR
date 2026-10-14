@@ -13,8 +13,8 @@ namespace OmniBot.VR.UI.Garage
     /// Enhanced garage — the "saved-robot fleet" view. Extends the
     /// <see cref="GaragePanelController"/> with a quick-resume banner for the
     /// last-driven robot and per-robot status badges (active / offline /
-    /// simulated). The quick-resume button skips the garage browse and jumps
-    /// straight into teleop with the last robot, applying its saved calibration.
+    /// simulated). The quick-resume button skips the garage browse. A saved
+    /// simulation resumes teleop; a saved real robot still shows the safety notice.
     ///
     /// Designed to sit alongside <see cref="GaragePanelController"/> on the same
     /// panel (or replace it) — both fire <c>RobotPicked</c>, so
@@ -131,7 +131,7 @@ namespace OmniBot.VR.UI.Garage
 
         private void OnRobotSelected(GarageRobot robot)
         {
-            SetStatus($"Selected {robot.DisplayName} — starting teleop…");
+            SetStatus($"Selected {robot.DisplayName} — choose simulate or drive real");
             RobotPicked?.Invoke(robot);
         }
 
@@ -147,7 +147,18 @@ namespace OmniBot.VR.UI.Garage
             bool has = LastRobotStore.HasLastRobot;
             quickResumeBanner.SetActive(has);
             if (has && quickResumeLabel != null)
-                quickResumeLabel.text = $"Resume {LastRobotStore.LastRobotName} ({LastRobotStore.LastRobotIp})";
+            {
+                string mode = LastRobotStore.HasSessionKind
+                    ? " · " + OmniBot.VR.Control.Session.SessionBannerStyle.LabelFor(LastRobotStore.LastSessionKind)
+                    : "";
+                quickResumeLabel.text = $"Resume {LastRobotStore.LastRobotName} ({LastRobotStore.LastRobotIp}){mode}";
+            }
+            if (has && LastRobotStore.HasSessionKind && quickResumeBanner != null)
+            {
+                var strip = quickResumeBanner.GetComponent<Image>();
+                if (strip != null)
+                    strip.color = OmniBot.VR.Control.Session.SessionBannerStyle.ColorFor(LastRobotStore.LastSessionKind);
+            }
         }
 
         /// <summary>Refresh the banner after a teleop session ends.</summary>
