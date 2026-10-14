@@ -1,5 +1,6 @@
 using UnityEngine;
 using OmniBot.VR.Core;
+using OmniBot.VR.Control.Drive;
 
 namespace OmniBot.VR.Input
 {
@@ -11,8 +12,9 @@ namespace OmniBot.VR.Input
     ///   Left  thumbstick X  → linear.y  (strafe left / right)
     ///   Right thumbstick X  → angular.z (rotate)
     ///
-    /// Turbo mode: hold right grip → 2× speed (still clamped to MAX_*).
-    /// Emergency stop: both grip buttons simultaneously.
+    /// Turbo mode: hold right grip → 2× speed, clamped to 0.2 m/s.
+    /// Emergency stop: both grips latch until left controller X. Releasing the
+    /// grips does not clear it (the grips are also deadman/turbo on the new path).
     ///
     /// Publishing behaviour:
     ///   - Publishes at CMD_VEL_PUBLISH_HZ while thumbsticks are active.
@@ -62,23 +64,27 @@ namespace OmniBot.VR.Input
 
             if (bothGrips && !_prevBothGrips)
             {
-                // Rising edge: activate emergency stop
+                // Rising edge: latch emergency stop. Grip release does not clear it.
                 _emergencyStopActive = true;
                 var stopMsg = new BoolMsg(true);
                 ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
+                ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_CMD_VEL, new TwistMsg(
+                    new Vector3Msg(0f, 0f, 0f),
+                    new Vector3Msg(0f, 0f, 0f)));
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(1f, 1f, OVRInput.Controller.RTouch);
-                Debug.Log("[BaseController] Emergency stop ACTIVATED.");
+                Debug.Log("[BaseController] Emergency stop LATCHED. Left X resets it.");
             }
-            else if (!bothGrips && _prevBothGrips && _emergencyStopActive)
+            else if (_emergencyStopActive && !bothGrips &&
+                     OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch))
             {
-                // Falling edge: release emergency stop
+                // Explicit reset (left X). Ignored while both grips are still held.
                 _emergencyStopActive = false;
                 var stopMsg = new BoolMsg(false);
                 ROSBridgeClient.Instance.Publish(RobotConfig.TOPIC_EMERGENCY_STOP, stopMsg);
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.LTouch);
                 OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
-                Debug.Log("[BaseController] Emergency stop RELEASED.");
+                Debug.Log("[BaseController] Emergency stop reset.");
             }
             _prevBothGrips = bothGrips;
 
@@ -98,10 +104,13 @@ namespace OmniBot.VR.Input
             // ── Turbo mode: right grip held (but NOT both grips) ─────────────
             bool turbo = rightGrip && !leftGrip;
             float speedMult = turbo ? TurboMultiplier : 1.0f;
+            float linCap = RobotConfig.MAX_LINEAR_VEL;
+            if (turbo)
+                linCap = Mathf.Min(linCap, DriveSchemeBase.HardTurboLinCapMps);
 
             // ── Compute velocity ─────────────────────────────────────────────
-            float vx      = Mathf.Clamp(ly * speedMult, -1f, 1f) * RobotConfig.MAX_LINEAR_VEL;
-            float vy      = Mathf.Clamp(lx * speedMult, -1f, 1f) * RobotConfig.MAX_LINEAR_VEL;
+            float vx      = Mathf.Clamp(ly * speedMult, -1f, 1f) * linCap;
+            float vy      = Mathf.Clamp(lx * speedMult, -1f, 1f) * linCap;
             float omega   = Mathf.Clamp(-rx * speedMult, -1f, 1f) * RobotConfig.MAX_ANGULAR_VEL;
 
             // ── Control mode management ──────────────────────────────────────

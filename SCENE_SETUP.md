@@ -123,8 +123,9 @@ One persistent GameObject holding the platform services (each is a singleton):
    Supabase `user_robots`). Empty? Add one on the website/app — it appears here.
 5. **Select a robot** → `OhhoVrApp` builds its `RobotProfile` from the catalog and
    hands it to `TeleopController`. The teleop page opens.
-   - **Base:** left stick strafe (vx/vy), right stick X yaw, right grip turbo,
-     both grips e-stop.
+   - **Base:** left stick strafe (vx/vy), right stick X yaw, hold one grip to
+     drive (deadman, on by default), right grip turbo clamped to 0.2 m/s,
+     both grips latched e-stop (left X resets; releasing the grips does not).
    - **Arm:** right-hand pose → IK → `/arm/joint_commands` @ 20 Hz; pinch →
      gripper; left-hand thumbs-up (hold 0.5 s) toggles arm enable.
    - All topics, joint names and limits come from the profile (OmniBot = SO-101

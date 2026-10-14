@@ -12,7 +12,8 @@ namespace OmniBot.VR.Control.Drive
     /// </summary>
     public sealed class DifferentialDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => "Left stick Y: drive · Right stick X: turn · Right grip: turbo";
+        public override string HudHint =>
+            "Left stick Y: drive · Right stick X: turn" + SafetyHudSuffix;
 
         protected override TwistMsg ComputeVelocity(
             float lx, float ly, float rx, float ry, float speedMult, out bool hasInput)
@@ -21,7 +22,7 @@ namespace OmniBot.VR.Control.Drive
             bool hasRot = Mathf.Abs(rx) > 0f;
             hasInput = hasFwd || hasRot;
 
-            float v     = Mathf.Clamp(ly * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float v     = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
 
             // No strafe — linear.y stays zero (non-holonomic constraint).

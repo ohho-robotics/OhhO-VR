@@ -90,6 +90,9 @@ namespace OmniBot.VR.Control
             bool rightGrip = OVRInput.Get(OVRInput.Button.SecondaryHandTrigger, OVRInput.Controller.RTouch) ||
                              OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger, OVRInput.Controller.RTouch) > 0.8f;
             bool bothGrips = leftGrip && rightGrip;
+            // Left X is the explicit e-stop reset. Grip release must not clear it:
+            // one grip is the deadman and the right grip is also turbo.
+            bool resetEStop = OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch);
 
             var input = new TeleopInput
             {
@@ -100,6 +103,7 @@ namespace OmniBot.VR.Control
                 BothGrips = bothGrips,
                 BothGripsPressed = bothGrips && !_prevBothGrips,
                 BothGripsReleased = !bothGrips && _prevBothGrips,
+                ResetEmergencyStop = resetEStop,
                 DeltaTime = Time.deltaTime,
             };
             _prevBothGrips = bothGrips;

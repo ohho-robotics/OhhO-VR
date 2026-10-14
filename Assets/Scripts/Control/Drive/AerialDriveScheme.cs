@@ -15,7 +15,8 @@ namespace OmniBot.VR.Control.Drive
     /// </summary>
     public sealed class AerialDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => "Left stick Y: altitude · Left stick X: yaw · Right stick: translate · Right grip: turbo";
+        public override string HudHint =>
+            "Left stick Y: altitude · Left stick X: yaw · Right stick: translate" + SafetyHudSuffix;
 
         protected override string IdleMode => "offboard";
 
@@ -32,10 +33,10 @@ namespace OmniBot.VR.Control.Drive
             //   Left stick X  → yaw rate (ω)
             //   Right stick Y → vx (forward)
             //   Right stick X → vy (right strafe)
-            float vz    = Mathf.Clamp(ly * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float vz    = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float omega = Mathf.Clamp(lx * speedMult, -1f, 1f) * Profile.MaxAngVel;
-            float vx    = Mathf.Clamp(ry * speedMult, -1f, 1f) * Profile.MaxLinVel;
-            float vy    = Mathf.Clamp(rx * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float vx    = Mathf.Clamp(ry * speedMult, -1f, 1f) * ActiveLinVelLimit;
+            float vy    = Mathf.Clamp(rx * speedMult, -1f, 1f) * ActiveLinVelLimit;
 
             return new TwistMsg(
                 new Vector3Msg(vx, vy, vz),

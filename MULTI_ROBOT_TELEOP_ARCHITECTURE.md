@@ -79,7 +79,8 @@ scene/prefab work in the editor._
 ### Implemented (Phase 3 — generalized drive + manipulation)
 
 - **`DriveSchemeBase`** — abstract base class extracting the shared e-stop
-  (both-grips), turbo (right grip), dead-zone, 20 Hz publish-timing and
+  (both grips, latched until an explicit reset), turbo (right grip, hard-capped
+  at 0.2 m/s), deadman grip (on by default), dead-zone, 20 Hz publish-timing and
   control-mode management from `MecanumDriveScheme`. Every drive scheme
   inherits it and only implements `ComputeVelocity` → `TwistMsg`.
 - **`DifferentialDriveScheme`** — `[v, ω]` for differential / skid-steer /
@@ -328,7 +329,7 @@ Variants selected from `RobotConfig.capabilities` / `armDof`:
 1. Selection → **OmniBot Pro** → `RobotProfile { drive: "mecanum", holonomic: true, armDof: 6, joints: SO101_JOINTS, rosTopics.cmdVel: "/cmd_vel/teleop", … }`.
 2. Factory → `MecanumDriveScheme` + `HandIK6DOF` (analytic SO-101 solver).
 3. **Base:** left stick → vx/vy strafe, right stick X → yaw → `/cmd_vel/teleop` @ 20 Hz.
-4. **Arm:** right-hand pose → analytic IK → 6 joints → `/arm/joint_commands` @ 20 Hz; pinch → `arm_gripper`. Left-hand thumbs-up toggles arm enable; both grips = e-stop.
+4. **Arm:** right-hand pose → analytic IK → 6 joints → `/arm/joint_commands` @ 20 Hz; pinch → `arm_gripper`. Left-hand thumbs-up toggles arm enable; both grips latch e-stop until left X reset. Deadman is on by default; turbo is clamped to 0.2 m/s.
 5. All in passthrough: a translucent twin of the SO-101 overlays the real table so the operator previews motion before the real arm catches up.
 
 ---

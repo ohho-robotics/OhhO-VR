@@ -5,15 +5,15 @@ namespace OmniBot.VR.Control.Drive
 {
     /// <summary>
     /// Holonomic mecanum base drive — the OmniBot reference. Left thumbstick →
-    /// vx/vy strafe, right thumbstick X → yaw. All clamped to
-    /// <c>profile.MaxLinVel/MaxAngVel</c>. E-stop, turbo, publish timing and
+    /// vx/vy strafe, right thumbstick X → yaw. Linear speed uses
+    /// <c>profile.MaxLinVel</c>, and turbo is additionally clamped to 0.2 m/s.
+    /// E-stop, turbo, publish timing and
     /// control-mode management are inherited from <see cref="DriveSchemeBase"/>.
     /// </summary>
     public sealed class MecanumDriveScheme : DriveSchemeBase
     {
-        public override string HudHint => RequireDeadman
-            ? "Hold grip: drive (deadman) · Left stick: strafe · Right stick X: yaw · Both grips: e-stop"
-            : "Left stick: strafe · Right stick X: yaw · Right grip: turbo · Both grips: e-stop";
+        public override string HudHint =>
+            "Left stick: strafe · Right stick X: yaw" + SafetyHudSuffix;
 
         protected override TwistMsg ComputeVelocity(
             float lx, float ly, float rx, float ry, float speedMult, out bool hasInput)
@@ -23,8 +23,8 @@ namespace OmniBot.VR.Control.Drive
             bool hasRot = Mathf.Abs(rx) > 0f;
             hasInput = hasX || hasY || hasRot;
 
-            float vx    = Mathf.Clamp(ly * speedMult, -1f, 1f) * Profile.MaxLinVel;
-            float vy    = Mathf.Clamp(lx * speedMult, -1f, 1f) * Profile.MaxLinVel;
+            float vx    = Mathf.Clamp(ly * speedMult, -1f, 1f) * ActiveLinVelLimit;
+            float vy    = Mathf.Clamp(lx * speedMult, -1f, 1f) * ActiveLinVelLimit;
             float omega = Mathf.Clamp(-rx * speedMult, -1f, 1f) * Profile.MaxAngVel;
 
             return new TwistMsg(
