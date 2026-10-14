@@ -11,3 +11,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Docs match the tree
         run: bash scripts/check-public-docs.sh
+      - name: Quest clip recorder dry run
+        run: bash scripts/record-quest-clip.sh --dry-run
