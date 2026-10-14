@@ -60,6 +60,12 @@ namespace OmniBot.VR.UI
         [SerializeField] private TMP_Text hintsText;
         [SerializeField] private Button backButton;
 
+        [Header("Safety (OHH-202)")]
+        [SerializeField] private Image safetyBanner;
+        [SerializeField] private TMP_Text safetyStatusText;
+        [SerializeField] private Button estopResetButton;
+        [SerializeField] private Button estopConfirmButton;
+
         // ── State ─────────────────────────────────────────────────────────────
         private App.OhhoVrApp _app;
         private Control.TeleopController _teleop;
@@ -73,6 +79,13 @@ namespace OmniBot.VR.UI
         private static readonly Color DisconnectedColor = new Color(0.85f, 0.25f, 0.25f);
         private static readonly Color RecordingColor = new Color(1f, 0.2f, 0.2f);
         private static readonly Color IdleDotColor = new Color(0.45f, 0.45f, 0.5f);
+        private static readonly Color ArmedColor = new Color(0.12f, 0.45f, 0.28f, 0.96f);
+        private static readonly Color LatchedColor = new Color(0.75f, 0.12f, 0.12f, 0.98f);
+        private static readonly Color DisarmedColor = new Color(0.55f, 0.38f, 0.08f, 0.96f);
+        private static readonly Color SafetyIdleColor = new Color(0.12f, 0.14f, 0.2f, 0.94f);
+
+        private TMP_Text _resetLabel;
+        private TMP_Text _confirmLabel;
 
         // ── Unity lifecycle ───────────────────────────────────────────────────
 
@@ -84,6 +97,7 @@ namespace OmniBot.VR.UI
 
         private void OnEnable()
         {
+            EnsureSafetyWidgets();
             if (connectButton != null) connectButton.onClick.AddListener(OnConnectClicked);
             if (disconnectButton != null) disconnectButton.onClick.AddListener(OnDisconnectClicked);
             if (cycleCameraButton != null) cycleCameraButton.onClick.AddListener(OnCycleCamera);
@@ -92,6 +106,8 @@ namespace OmniBot.VR.UI
             if (discardButton != null) discardButton.onClick.AddListener(OnDiscard);
             if (exportButton != null) exportButton.onClick.AddListener(OnExportAll);
             if (backButton != null) backButton.onClick.AddListener(OnBack);
+            if (estopResetButton != null) estopResetButton.onClick.AddListener(OnEstopResetClicked);
+            if (estopConfirmButton != null) estopConfirmButton.onClick.AddListener(OnEstopConfirmClicked);
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged += OnConnectionState;
@@ -120,6 +136,8 @@ namespace OmniBot.VR.UI
             if (discardButton != null) discardButton.onClick.RemoveListener(OnDiscard);
             if (exportButton != null) exportButton.onClick.RemoveListener(OnExportAll);
             if (backButton != null) backButton.onClick.RemoveListener(OnBack);
+            if (estopResetButton != null) estopResetButton.onClick.RemoveListener(OnEstopResetClicked);
+            if (estopConfirmButton != null) estopConfirmButton.onClick.RemoveListener(OnEstopConfirmClicked);
 
             var conn = ConnectionManager.Instance;
             if (conn != null) conn.OnConnectionStateChanged -= OnConnectionState;
@@ -134,6 +152,7 @@ namespace OmniBot.VR.UI
                 RefreshTelemetryUi();
                 RefreshRecordingUi();
             }
+            RefreshSafetyUi();
         }
 
         // ── Connection ────────────────────────────────────────────────────────
@@ -360,6 +379,143 @@ namespace OmniBot.VR.UI
         private void OnBack()
         {
             if (_app != null) _app.StopTeleopAndReturnToGarage();
+        }
+
+        // ── Safety state + e-stop reset ───────────────────────────────────────
+
+        private void OnEstopResetClicked()
+        {
+            if (_teleop == null) _teleop = FindObjectOfType<Control.TeleopController>();
+            _teleop?.RequestEstopReset();
+            RefreshSafetyUi();
+        }
+
+        private void OnEstopConfirmClicked()
+        {
+            if (_teleop == null) _teleop = FindObjectOfType<Control.TeleopController>();
+            _teleop?.ConfirmEstopReset();
+            RefreshSafetyUi();
+        }
+
+        private void RefreshSafetyUi()
+        {
+            var safety = _teleop != null ? _teleop.Safety : null;
+            string line = safety != null ? safety.StatusLine : "SAFETY — no session";
+            if (safetyStatusText != null)
+            {
+                safetyStatusText.text = line;
+                safetyStatusText.fontStyle = FontStyles.Bold;
+            }
+
+            bool latched = safety != null && safety.Latched;
+            bool pending = safety != null && safety.ResetConfirmPending;
+            bool linked = safety != null && safety.LinkConnected;
+            if (safetyBanner != null)
+            {
+                if (latched) safetyBanner.color = LatchedColor;
+                else if (safety != null && safety.StateKnown && safety.Armed) safetyBanner.color = ArmedColor;
+                else if (safety != null && safety.StateKnown) safetyBanner.color = DisarmedColor;
+                else safetyBanner.color = SafetyIdleColor;
+            }
+
+            if (estopResetButton != null) estopResetButton.interactable = latched && linked;
+            if (_resetLabel != null) _resetLabel.text = pending ? "Reset armed" : "Reset e-stop";
+            if (estopConfirmButton != null)
+            {
+                estopConfirmButton.gameObject.SetActive(pending);
+                estopConfirmButton.interactable = pending && latched && linked;
+            }
+        }
+
+        /// <summary>
+        /// The shipped scene predates the safety strip. Build it when the
+        /// serialized widgets were not assigned so the latch is visible without
+        /// a scene rebuild.
+        /// </summary>
+        private void EnsureSafetyWidgets()
+        {
+            if (safetyStatusText != null && estopResetButton != null && estopConfirmButton != null)
+            {
+                _resetLabel = estopResetButton.GetComponentInChildren<TMP_Text>();
+                _confirmLabel = estopConfirmButton.GetComponentInChildren<TMP_Text>();
+                return;
+            }
+
+            TMP_FontAsset font = connectionStatusText != null ? connectionStatusText.font : null;
+            Sprite uiSprite = connectButton != null ? connectButton.GetComponent<Image>()?.sprite : null;
+            if (uiSprite == null && connectionDot != null) uiSprite = connectionDot.sprite;
+
+            var bannerGo = new GameObject("Safety Banner", typeof(RectTransform));
+            bannerGo.transform.SetParent(transform, false);
+            bannerGo.transform.SetAsLastSibling();
+            var bannerRt = (RectTransform)bannerGo.transform;
+            bannerRt.anchorMin = new Vector2(0.5f, 1f);
+            bannerRt.anchorMax = new Vector2(0.5f, 1f);
+            bannerRt.pivot = new Vector2(0.5f, 1f);
+            bannerRt.sizeDelta = new Vector2(980f, 88f);
+            bannerRt.anchoredPosition = new Vector2(0f, -12f);
+            safetyBanner = bannerGo.AddComponent<Image>();
+            safetyBanner.sprite = uiSprite;
+            safetyBanner.color = SafetyIdleColor;
+
+            safetyStatusText = CreateLabel("Safety Status", bannerGo.transform, font, 28, TextAlignmentOptions.MidlineLeft);
+            var statusRt = safetyStatusText.rectTransform;
+            statusRt.anchorMin = new Vector2(0f, 0f);
+            statusRt.anchorMax = new Vector2(0f, 1f);
+            statusRt.pivot = new Vector2(0f, 0.5f);
+            statusRt.sizeDelta = new Vector2(560f, 0f);
+            statusRt.anchoredPosition = new Vector2(20f, 0f);
+            safetyStatusText.text = "SAFETY";
+
+            estopResetButton = CreateHudButton("E-Stop Reset", bannerGo.transform, font, uiSprite, "Reset e-stop", LatchedColor, out _resetLabel);
+            PlaceHudButton(estopResetButton, new Vector2(-280f, 0f));
+            estopConfirmButton = CreateHudButton("E-Stop Confirm", bannerGo.transform, font, uiSprite, "Confirm reset", new Color(0.95f, 0.85f, 0.2f), out _confirmLabel);
+            PlaceHudButton(estopConfirmButton, new Vector2(-40f, 0f));
+            if (_confirmLabel != null) _confirmLabel.color = Color.black;
+            estopConfirmButton.gameObject.SetActive(false);
+        }
+
+        private static TMP_Text CreateLabel(string name, Transform parent, TMP_FontAsset font, float size, TextAlignmentOptions align)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            if (font != null) tmp.font = font;
+            tmp.fontSize = size;
+            tmp.color = Color.white;
+            tmp.alignment = align;
+            tmp.enableWordWrapping = false;
+            tmp.raycastTarget = false;
+            return tmp;
+        }
+
+        private static Button CreateHudButton(string name, Transform parent, TMP_FontAsset font, Sprite sprite, string label, Color bg, out TMP_Text labelText)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var img = go.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = bg;
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+            labelText = CreateLabel("Text", go.transform, font, 22, TextAlignmentOptions.Center);
+            var rt = labelText.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            labelText.text = label;
+            return btn;
+        }
+
+        private static void PlaceHudButton(Button button, Vector2 anchoredPos)
+        {
+            var rt = (RectTransform)button.transform;
+            rt.anchorMin = new Vector2(1f, 0.5f);
+            rt.anchorMax = new Vector2(1f, 0.5f);
+            rt.pivot = new Vector2(1f, 0.5f);
+            rt.sizeDelta = new Vector2(220f, 56f);
+            rt.anchoredPosition = anchoredPos;
         }
     }
 }

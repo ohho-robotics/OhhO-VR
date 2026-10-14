@@ -564,6 +564,17 @@ namespace OmniBot.VR.Editor
         {
             var page = MakePage("Teleop Page", parent);
 
+            var safetyBanner = MakePanel("Safety Banner", page.transform, new Color(0.12f, 0.14f, 0.2f, 0.94f));
+            Place(safetyBanner.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(980f, 88f), new Vector2(0f, -12f));
+            var safetyStatus = MakeText("Safety Status", safetyBanner.transform, "SAFETY — waiting for /ohho/safety/state", 28, TextMain, TextAlignmentOptions.MidlineLeft);
+            safetyStatus.fontStyle = FontStyles.Bold;
+            Place(safetyStatus.rectTransform, new Vector2(0f, 0.5f), new Vector2(520f, 64f), new Vector2(20f, -32f));
+            var estopReset = MakeButton("E-Stop Reset", safetyBanner.transform, "Reset e-stop", 22, Danger, TextMain);
+            Place(estopReset.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(220f, 56f), new Vector2(-250f, 0f));
+            var estopConfirm = MakeButton("E-Stop Confirm", safetyBanner.transform, "Confirm reset", 22, new Color(0.95f, 0.85f, 0.2f), Color.black);
+            Place(estopConfirm.GetComponent<RectTransform>(), new Vector2(1f, 0.5f), new Vector2(220f, 56f), new Vector2(-16f, 0f));
+            estopConfirm.gameObject.SetActive(false);
+
             // ── Left column: robot + connection + telemetry ──
             var left = MakePanel("Left Column", page.transform, new Color(0, 0, 0, 0));
             Place(left.GetComponent<RectTransform>(), new Vector2(0, 0.5f), new Vector2(500, 880), new Vector2(20, 0));
@@ -662,6 +673,10 @@ namespace OmniBot.VR.Editor
             hso.FindProperty("robotNameText").objectReferenceValue = robotName;
             hso.FindProperty("hintsText").objectReferenceValue = hints;
             hso.FindProperty("backButton").objectReferenceValue = back;
+            hso.FindProperty("safetyBanner").objectReferenceValue = safetyBanner.GetComponent<Image>();
+            hso.FindProperty("safetyStatusText").objectReferenceValue = safetyStatus;
+            hso.FindProperty("estopResetButton").objectReferenceValue = estopReset;
+            hso.FindProperty("estopConfirmButton").objectReferenceValue = estopConfirm;
             hso.ApplyModifiedPropertiesWithoutUndo();
             return page;
         }

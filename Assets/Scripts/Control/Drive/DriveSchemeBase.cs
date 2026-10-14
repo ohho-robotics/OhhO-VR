@@ -39,6 +39,14 @@ namespace OmniBot.VR.Control.Drive
         public abstract string HudHint { get; }
 
         /// <summary>
+        /// While true, thumbstick velocity is not published. E-stop edges still
+        /// run. <see cref="Safety.TeleopSafetySession"/> sets this when the robot
+        /// e-stop is latched, or until a deadman re-press after link loss or the
+        /// headset coming off. Cleared on <see cref="Configure"/>.
+        /// </summary>
+        public bool SuppressMotion { get; set; }
+
+        /// <summary>
         /// Control-mode string published after the idle timeout. Ground robots
         /// revert to "nav2"; aerial/underwater robots can override (e.g. "offboard"
         /// or an empty string to leave the mode untouched).
@@ -59,6 +67,7 @@ namespace OmniBot.VR.Control.Drive
             NoInputTimer = 0f;
             NoInputModeTimer = 0f;
             InTeleopMode = false;
+            SuppressMotion = false;
         }
 
         public void Tick(ref TeleopInput input, IRobotLink link)
@@ -67,7 +76,27 @@ namespace OmniBot.VR.Control.Drive
 
             // ── Emergency stop: both grips (rising/falling edge) ───────────────
             HandleEmergencyStop(ref input, link);
-            if (EmergencyStopActive) return;
+            if (EmergencyStopActive)
+            {
+                if (IsPublishing && !string.IsNullOrEmpty(Profile.Topics?.CmdVel))
+                {
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                    IsPublishing = false;
+                }
+                return;
+            }
+
+            // Latched safety state, or motion held until a deadman re-press.
+            if (SuppressMotion)
+            {
+                if (IsPublishing && !string.IsNullOrEmpty(Profile.Topics?.CmdVel))
+                {
+                    link.Publish(Profile.Topics.CmdVel, ZeroTwist());
+                    IsPublishing = false;
+                }
+                UpdateControlMode(false, input.DeltaTime, link);
+                return;
+            }
 
             // ── Thumbsticks (dead-zoned) ───────────────────────────────────────
             float lx = ApplyDeadZone(input.LeftStick.x);
