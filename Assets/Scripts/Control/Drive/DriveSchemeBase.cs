@@ -61,7 +61,7 @@ namespace OmniBot.VR.Control.Drive
             InTeleopMode = false;
         }
 
-        public void Tick(ref TeleopInput input, IRobotLink link)
+        public virtual void Tick(ref TeleopInput input, IRobotLink link)
         {
             if (!IsConfigured || Profile == null || !link.IsConnected) return;
 
@@ -104,7 +104,7 @@ namespace OmniBot.VR.Control.Drive
             }
         }
 
-        public void Stop(IRobotLink link)
+        public virtual void Stop(IRobotLink link)
         {
             if (!IsConfigured || Profile == null) return;
             if (link != null && link.IsConnected)
