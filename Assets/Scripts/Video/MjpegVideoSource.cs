@@ -14,8 +14,8 @@ namespace OmniBot.VR.Video
     /// headers with a JPEG-marker (FF D8 … FF D9) fallback, loads each frame into
     /// a reusable <see cref="Texture2D"/> via <c>ImageConversion.LoadImage</c>.
     ///
-    /// This is the default / fallback source — it works everywhere (no extra
-    /// Unity packages), but has ~200–500 ms latency. WebRTC is sub-100 ms.
+    /// This is the fallback source when WebRTC signaling or the decoder is
+    /// unavailable. It has ~200–500 ms latency. WebRTC is the low-latency path.
     /// </summary>
     public sealed class MjpegVideoSource : IVideoSource
     {
@@ -54,6 +54,10 @@ namespace OmniBot.VR.Video
                 _host.StopCoroutine(_coroutine);
                 _coroutine = null;
             }
+        }
+
+        public void Tick()
+        {
         }
 
         public void Dispose()

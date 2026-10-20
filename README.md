@@ -4,7 +4,7 @@
 
 This repository is the **Meta Quest headset client only**. It does not contain the OhhO website, the Android app, or the robot's ROS 2 workspace.
 
-Unity application for controlling the OmniBot mecanum-wheel robot and SO-101 arm over ROSBridge (WebSocket, v2 JSON). Primary target: **Meta Quest 3 / 3S**. The camera feed in this repo is **MJPEG**. WebRTC is **roadmap**: `WebRtcVideoSource` does not complete signaling, and `com.unity.webrtc` is not in `Packages/manifest.json`.
+Unity application for controlling the OmniBot mecanum-wheel robot and SO-101 arm over ROSBridge (WebSocket, v2 JSON). Primary target: **Meta Quest 3 / 3S**. The camera feed prefers WebRTC (`com.unity.webrtc` 3.0.0, ohho_webrtc signaling) and falls back to MJPEG. Measuring Quest glass-to-glass latency is still roadmap.
 
 The app is a **single unified world-space screen** ("OhhO Screen") that floats
 in front of you in passthrough and always faces you. It is the headset-native
@@ -114,7 +114,7 @@ unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmo
    (default `192.168.1.101`) and port (default `9090`) → **Connect**.
    The status dot turns green when connected.
 
-Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view expects MJPEG from `web_video_server` on port `8080`. Those processes live on the robot PC. This repo does not ship them.
+Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view tries WebRTC first: with PlayerPrefs `ohho.webrtc.token` it opens `wss://<robot>:8443/webrtc/signaling`, and without a token it opens `ws://<robot>:8766/signaling`. MJPEG from `web_video_server` on port `8080` is the fallback. An explicit socket can be set in `ohho.webrtc.url`. Those processes live on the robot PC. This repo does not ship them.
 
 ### In-headset sim (no robot PC)
 
@@ -295,7 +295,7 @@ The visionOS port is planned for a future release. Key design decisions:
 │   │   │   ├── Garage/GaragePanelController.cs
 │   │   │   ├── TeleopHudController.cs # connection+telemetry+camera+recording+export
 │   │   │   └── ...
-│   │   ├── Video/              # MJPEG camera feed; WebRTC source is roadmap
+│   │   ├── Video/              # WebRTC receive (ohho_webrtc) with MJPEG fallback
 │   │   └── Recording/          # EpisodeManager, ProfileDrivenRecorder
 │   └── Editor/
 │       └── OhhoUnifiedAppBuilder.cs  # OmniBot → Rebuild Unified OhhO Screen

@@ -35,7 +35,7 @@
         "VR + mobile teleop",
         "Hand-tracking arm IK",
         "Pre-loaded robot profiles",
-        "Live camera view (MJPEG)",
+        "Live camera view (WebRTC, MJPEG fallback)",
         "Emergency stop + safe clamps"
       ],
       "specs": [
@@ -53,7 +53,7 @@
         },
         {
           "label": "Video",
-          "value": "MJPEG via web_video_server"
+          "value": "WebRTC, or MJPEG via web_video_server"
         },
         {
           "label": "Safety",
