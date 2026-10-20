@@ -40,7 +40,7 @@ I have no users, customers, or partners to list. The about page is the whole com
 
 Comments I can answer: the rosbridge topic choices, why the Quest recorder writes JSONL instead of a LeRobot dataset (the robot-side node is the one that tries LeRobot, and I have not published a dataset), and what is honestly missing for a tagged v0.1.0.
 
-Email: varun.vaidhiya@gmail.com
+Email: varun@ohho-robotics.com
 
 ---
 

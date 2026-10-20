@@ -55,7 +55,7 @@ Edit-mode tests live in the Unity repo. The README says CI skips them until Unit
 
 A look at that topic list from people who already run rosbridge to a mobile base. In particular: whether `/cmd_vel/teleop` plus a separate `/emergency_stop` is a contract you would actually bind, or whether you would rather the client publish on `/cmd_vel` and let a mux on the robot own the priority. I am one person with one bench robot. I do not have a user count to offer, and I am not asking for a dependency.
 
-Email if Discourse is the wrong place for the thread: varun.vaidhiya@gmail.com.
+Email if Discourse is the wrong place for the thread: varun@ohho-robotics.com.
 
 ---
 

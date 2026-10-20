@@ -57,7 +57,7 @@ If you want to look, start here:
 
 I would like review on two specific things. The first is the ROSBridge contract the Quest client uses: `/cmd_vel/teleop`, `/arm/joint_commands`, `/arm/joint_states`, `/arm/enable`, `/odom`, and `/emergency_stop`. The second is whether the robot-side recorder's dataset features still match current LeRobot, given that the import path in the public node is the older `lerobot.common.datasets` layout. I will not ask anyone to download a dataset, because I have not published one.
 
-Questions and build notes: varun.vaidhiya@gmail.com. Code is the source of truth when this post and the README disagree.
+Questions and build notes: varun@ohho-robotics.com. Code is the source of truth when this post and the README disagree.
 
 ---
 
