@@ -82,7 +82,7 @@ Intent: one concrete review ask and a human email. Link the blog only after the 
 
 > If you read ROS 2 or LeRobot code for a living, the review I want is the rosbridge topic list and whether that recorder's schema still matches current LeRobot.
 >
-> varun@ohho-robotics.com
+> varun.vaidhiya@gmail.com
 >
 > Longer write-up, once it is published: the OhhO blog post "The OhhO source is public".
 

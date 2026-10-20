@@ -35,7 +35,7 @@ What I would find useful:
 2. Whether a mobile base should be `vx, vy, wz` inside `action`, or a separate action key, in datasets you train on today.
 3. A pointer to a small public mobile-manip dataset whose schema is a better target than what this node invented, if you know one.
 
-I am not announcing a trained policy. GPU training notes in the OmniBot tree are desktop-NVIDIA instructions, and I have no success rate to report. Email is fine if a public thread is too noisy: varun@ohho-robotics.com.
+I am not announcing a trained policy. GPU training notes in the OmniBot tree are desktop-NVIDIA instructions, and I have no success rate to report. Email is fine if a public thread is too noisy: varun.vaidhiya@gmail.com.
 
 ---
 
