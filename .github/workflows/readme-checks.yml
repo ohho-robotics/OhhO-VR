@@ -11,3 +11,34 @@ jobs:
       - uses: actions/checkout@v4
       - name: Docs match the tree
         run: bash scripts/check-public-docs.sh
+      - name: Relative links in README and docs resolve
+        run: |
+          python3 - << 'PY'
+          import re, sys
+          from pathlib import Path
+          root = Path(".").resolve()
+          files = [root / "README.md", *sorted((root / "docs").glob("*.md"))]
+          link = re.compile(r"!\[[^\]]*\]\(([^)]+)\)|\[[^\]]*\]\(([^)]+)\)")
+          bad = []
+          for path in files:
+              text = path.read_text(encoding="utf-8")
+              for m in link.finditer(text):
+                  target = (m.group(1) or m.group(2) or "").strip()
+                  if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+                      continue
+                  target = target.split("#", 1)[0].strip()
+                  if not target:
+                      continue
+                  resolved = (path.parent / target).resolve()
+                  if not resolved.is_file():
+                      bad.append(f"{path.relative_to(root)} -> {target}")
+          if bad:
+              print("missing relative doc links:", file=sys.stderr)
+              print("\n".join(bad), file=sys.stderr)
+              sys.exit(1)
+          print(f"relative links ok ({len(files)} files)")
+          PY
+          if grep -nE 'launch_vr_teleop\.sh|launch_rosbridge\.sh|^cd robot_ws|`robot_ws`|2023\.3\.0f1|omnibot_vr|in this branch' docs/*.md; then
+            echo "a doc under docs/ uses a forbidden public-doc phrase" >&2
+            exit 1
+          fi
