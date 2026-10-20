@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using NativeWebSocket;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace OmniBot.VR.Core
 {
@@ -46,6 +45,8 @@ namespace OmniBot.VR.Core
             = new ConcurrentQueue<(string, string)>();
         private readonly Dictionary<string, List<Action<string>>> _subscribers
             = new Dictionary<string, List<Action<string>>>();
+        private readonly Dictionary<string, string> _subscribeWire
+            = new Dictionary<string, string>();
         private readonly object _subscribersLock = new object();
 
         private bool _intentionalDisconnect = false;
@@ -151,18 +152,31 @@ namespace OmniBot.VR.Core
 
         /// <summary>
         /// Subscribes to a ROS topic. The callback is invoked on the main thread
-        /// with the raw JSON string of the msg field.
+        /// with the raw JSON string of the msg field. A png-compressed publish
+        /// is unwrapped before the callback runs.
         /// </summary>
         public void Subscribe(string topic, string type, Action<string> callback)
         {
+            Subscribe(topic, type, callback, 0, null);
+        }
+
+        /// <summary>
+        /// Subscribes with a rosbridge throttle (milliseconds) and optional
+        /// compression (<c>png</c>). The wire options are taken from the first
+        /// subscriber on that topic and are replayed after a reconnect.
+        /// </summary>
+        public void Subscribe(string topic, string type, Action<string> callback, int throttleRateMs, string compression)
+        {
+            if (string.IsNullOrEmpty(topic) || callback == null) return;
             lock (_subscribersLock)
             {
                 if (!_subscribers.ContainsKey(topic))
                 {
                     _subscribers[topic] = new List<Action<string>>();
-                    // Send subscribe op to ROSBridge
-                    var subMsg = new ROSSubscribeMessage(topic, type);
-                    SendJson(JsonConvert.SerializeObject(subMsg));
+                    var subMsg = new ROSSubscribeMessage(topic, type, throttleRateMs, compression);
+                    string wire = JsonConvert.SerializeObject(subMsg);
+                    _subscribeWire[topic] = wire;
+                    SendJson(wire);
                 }
                 _subscribers[topic].Add(callback);
             }
@@ -174,9 +188,33 @@ namespace OmniBot.VR.Core
             lock (_subscribersLock)
             {
                 _subscribers.Remove(topic);
+                _subscribeWire.Remove(topic);
             }
+            if (string.IsNullOrEmpty(topic)) return;
             var unsubMsg = new ROSUnsubscribeMessage(topic);
             SendJson(JsonConvert.SerializeObject(unsubMsg));
+        }
+
+        /// <summary>
+        /// Removes one callback. The rosbridge unsubscribe is sent only when
+        /// that was the last listener, so a shared topic such as <c>/odom</c>
+        /// stays up for the other panels.
+        /// </summary>
+        public void Unsubscribe(string topic, Action<string> callback)
+        {
+            if (string.IsNullOrEmpty(topic) || callback == null) return;
+            bool sendUnsub = false;
+            lock (_subscribersLock)
+            {
+                if (!_subscribers.TryGetValue(topic, out var list)) return;
+                list.Remove(callback);
+                if (list.Count > 0) return;
+                _subscribers.Remove(topic);
+                _subscribeWire.Remove(topic);
+                sendUnsub = true;
+            }
+            if (sendUnsub)
+                SendJson(JsonConvert.SerializeObject(new ROSUnsubscribeMessage(topic)));
         }
 
         // ── Private helpers ──────────────────────────────────────────────────
@@ -239,18 +277,9 @@ namespace OmniBot.VR.Core
             string json = System.Text.Encoding.UTF8.GetString(data);
             try
             {
-                // Quick op check without full deserialize
-                JObject root = JObject.Parse(json);
-                string op = root["op"]?.ToString();
-                if (op == "publish")
-                {
-                    string topic = root["topic"]?.ToString();
-                    if (!string.IsNullOrEmpty(topic))
-                    {
-                        string msgJson = root["msg"]?.ToString(Formatting.None) ?? "{}";
-                        _incomingQueue.Enqueue((topic, msgJson));
-                    }
-                }
+                if (!RosbridgeIncoming.TryExtractPublish(json, out string topic, out string msgJson))
+                    return;
+                _incomingQueue.Enqueue((topic, msgJson));
             }
             catch (Exception ex)
             {
@@ -307,9 +336,10 @@ namespace OmniBot.VR.Core
             {
                 foreach (var kvp in _subscribers)
                 {
-                    // We don't track types here so we use empty string; ROSBridge accepts it
-                    var subMsg = new ROSSubscribeMessage(kvp.Key, "");
-                    SendJson(JsonConvert.SerializeObject(subMsg));
+                    if (_subscribeWire.TryGetValue(kvp.Key, out string wire))
+                        SendJson(wire);
+                    else
+                        SendJson(JsonConvert.SerializeObject(new ROSSubscribeMessage(kvp.Key, "")));
                 }
             }
         }
