@@ -10,8 +10,9 @@ namespace OmniBot.VR.Control
     /// schemes. Mirrors <c>website/lib/connect/types.ts</c>
     /// <c>RobotTransport</c>.
     ///
-    /// Today's only implementation is <see cref="RosBridgeLink"/>, which wraps the
-    /// existing <see cref="ROSBridgeClient"/> singleton.
+    /// Transports: <see cref="RosBridgeLink"/> (live ROSBridge WebSocket) and
+    /// <see cref="SimulatedRobotLink"/> (in-headset, no robot PC). Pick one with
+    /// <see cref="RobotLinkFactory"/>.
     /// </summary>
     public interface IRobotLink
     {

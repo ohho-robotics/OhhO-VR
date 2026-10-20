@@ -81,7 +81,7 @@ visionOS support is planned but not yet implemented. Architecture notes:
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (39 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (59 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -115,6 +115,20 @@ unity -batchmode -nographics -projectPath <clone> -runTests -testPlatform editmo
    The status dot turns green when connected.
 
 Connect expects a robot that is **not in this repository**. The headset opens a ROSBridge WebSocket (default port `9090`). Recording export expects an HTTP bridge on port `8765`. The camera view expects MJPEG from `web_video_server` on port `8080`. Those processes live on the robot PC. This repo does not ship them.
+
+### In-headset sim (no robot PC)
+
+`RobotLinkFactory.Select(RobotLinkTarget.InHeadset)` returns a `SimulatedRobotLink`. It never opens a socket. The base follows the website deadman rule (`lib/connect/teleop.ts`): motion is commanded only while the deadman is held, and releasing it sends zero. E-stop latches zero until it is cleared. Each linear axis is capped at 0.2 m/s and yaw at 1 rad/s (`RobotConfig`). Arm joints slew at that same 1 rad/s and stay inside their position limits. Odometry, joint states, IMU, and `/sim/telemetry` are marked `kind=sim`.
+
+Shared numeric vectors live in `Assets/Scripts/Control/Simulated/SimulatedModel.cs` (`SimulatedVectors`): the teleop deadman sample `{0.2, 0.05, -0.4}`, keyboard scales 0.2 m/s and 0.8 rad/s, battery 0.87, and the 100 ms holonomic step from `lib/connect/simulated.ts`.
+
+OHH-212 session picker hookup, one line:
+
+```
+link = RobotLinkFactory.Select(RobotLinkTarget.InHeadset);
+```
+
+Assigning an `InHeadsetSimHost` to `TeleopController.linkProvider` is the same choice. That host ticks the sim. Deadman is the left index trigger, or Space in Play Mode, so the grip buttons stay turbo and e-stop. Until the OHH-211 Unity twin (`OmniBot.VR.Twin`) is in the project, the host builds a 4 m placeholder room instead of the twin mesh.
 
 ---
 
