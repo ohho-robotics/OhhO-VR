@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEngine;
+
+[assembly: InternalsVisibleTo("Assembly-CSharp-Editor")]
 
 namespace OmniBot.VR.Control
 {
@@ -19,11 +22,21 @@ namespace OmniBot.VR.Control
         public const float WallHeightMeters = 2f;
         public const float RobotRestHeight = 0.08f;
 
+        /// <summary>
+        /// When set, replaces the <see cref="TwinNamespace"/> scan.
+        /// Tests assign <c>false</c> so the placeholder room still builds while
+        /// <c>OmniBot.VR.Twin</c> is loaded, then clear the override.
+        /// </summary>
+        internal static bool? TwinPresentOverride { get; set; }
+
         readonly List<Material> _ownedMaterials = new List<Material>();
         Transform _robot;
 
         public static bool IsUnityTwinPresent()
         {
+            if (TwinPresentOverride.HasValue)
+                return TwinPresentOverride.Value;
+
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             for (int a = 0; a < assemblies.Length; a++)
             {
