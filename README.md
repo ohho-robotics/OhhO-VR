@@ -313,6 +313,16 @@ Cloud sim ([OHH-216](https://linear.app/ohho-robotics/issue/OHH-216)), AprilTag 
 
 ---
 
+## Demo clip
+
+The 30–60 second Quest passthrough clip (driving OmniBot and moving the arm) is **pending**. There is no video URL until that file is on YouTube.
+
+Shot list, Meta Quest Developer Hub / `adb` / scrcpy capture, captions, and the upload checklist: [docs/recording/quest-teleop-clip.md](docs/recording/quest-teleop-clip.md).
+
+**Needs Varun: Quest + robot, record and upload.**
+
+---
+
 ## 14. AR mode
 
 AR mode draws a 1:1 twin on the detected robot and a HUD that stays on that robot. The HUD shows joint angles, planar speed, yaw rate, and tag confidence. When detection is not locked, `PlaceInFrontOf` or `PlaceManually` places the twin. The overlay only subscribes; it does not publish teleop commands. It is not in `Assets/scene1.unity`. Hookup is `Assets/Scripts/AR/HOOKUP.md`.
