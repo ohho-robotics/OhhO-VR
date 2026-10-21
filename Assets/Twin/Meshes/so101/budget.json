@@ -1,0 +1,230 @@
+{
+  "limit": 50000,
+  "targetBudget": 45000,
+  "totalTriangles": 44903,
+  "suggestedUniformScale": 1.0,
+  "note": "Vertex-clustered copies of the SO-101 STLs. The live twin renders URDF primitives.",
+  "meshes": [
+    {
+      "source": "base_motor_holder_so101_v1.stl",
+      "obj": "base_motor_holder_so101_v1.obj",
+      "sourceTriangles": 37540,
+      "triangles": 5233,
+      "bboxMin": [
+        -0.0224,
+        0.0381,
+        -0.0208
+      ],
+      "bboxMax": [
+        0.0253,
+        0.0695,
+        0.0594
+      ],
+      "extent": 0.0802
+    },
+    {
+      "source": "base_so101_v2.stl",
+      "obj": "base_so101_v2.obj",
+      "sourceTriangles": 9430,
+      "triangles": 1316,
+      "bboxMin": [
+        -0.0555,
+        0.0,
+        -0.016
+      ],
+      "bboxMax": [
+        0.0555,
+        0.072,
+        0.071
+      ],
+      "extent": 0.1109
+    },
+    {
+      "source": "motor_holder_so101_base_v1.stl",
+      "obj": "motor_holder_so101_base_v1.obj",
+      "sourceTriangles": 22586,
+      "triangles": 3151,
+      "bboxMin": [
+        -0.0538,
+        -0.0551,
+        -0.0289
+      ],
+      "bboxMax": [
+        -0.0258,
+        -0.017,
+        0.0262
+      ],
+      "extent": 0.0551
+    },
+    {
+      "source": "motor_holder_so101_wrist_v1.stl",
+      "obj": "motor_holder_so101_wrist_v1.obj",
+      "sourceTriangles": 21042,
+      "triangles": 2920,
+      "bboxMin": [
+        -0.0538,
+        -0.0539,
+        -0.0302
+      ],
+      "bboxMax": [
+        -0.0258,
+        -0.017,
+        0.0262
+      ],
+      "extent": 0.0564
+    },
+    {
+      "source": "moving_jaw_so101_v1.stl",
+      "obj": "moving_jaw_so101_v1.obj",
+      "sourceTriangles": 28270,
+      "triangles": 3943,
+      "bboxMin": [
+        -0.0123,
+        -0.082,
+        -0.024
+      ],
+      "bboxMax": [
+        0.01,
+        0.01,
+        0.024
+      ],
+      "extent": 0.092
+    },
+    {
+      "source": "rotation_pitch_so101_v1.stl",
+      "obj": "rotation_pitch_so101_v1.obj",
+      "sourceTriangles": 17672,
+      "triangles": 2464,
+      "bboxMin": [
+        -0.0598,
+        0.0002,
+        -0.023
+      ],
+      "bboxMax": [
+        0.0,
+        0.0844,
+        0.023
+      ],
+      "extent": 0.0842
+    },
+    {
+      "source": "sts3215_03a_no_horn_v1.stl",
+      "obj": "sts3215_03a_no_horn_v1.obj",
+      "sourceTriangles": 17316,
+      "triangles": 2374,
+      "bboxMin": [
+        -0.0227,
+        -0.0124,
+        -0.0194
+      ],
+      "bboxMax": [
+        0.0227,
+        0.0124,
+        0.0202
+      ],
+      "extent": 0.0454
+    },
+    {
+      "source": "sts3215_03a_v1.stl",
+      "obj": "sts3215_03a_v1.obj",
+      "sourceTriangles": 19080,
+      "triangles": 2652,
+      "bboxMin": [
+        -0.0227,
+        -0.0124,
+        -0.0194
+      ],
+      "bboxMax": [
+        0.0227,
+        0.0124,
+        0.0202
+      ],
+      "extent": 0.0454
+    },
+    {
+      "source": "under_arm_so101_v1.stl",
+      "obj": "under_arm_so101_v1.obj",
+      "sourceTriangles": 39516,
+      "triangles": 5512,
+      "bboxMin": [
+        -0.0538,
+        -0.044,
+        -0.0342
+      ],
+      "bboxMax": [
+        0.0768,
+        -0.02,
+        0.0302
+      ],
+      "extent": 0.1307
+    },
+    {
+      "source": "upper_arm_so101_v1.stl",
+      "obj": "upper_arm_so101_v1.obj",
+      "sourceTriangles": 26068,
+      "triangles": 3634,
+      "bboxMin": [
+        -0.0651,
+        -0.0,
+        -0.0356
+      ],
+      "bboxMax": [
+        0.0771,
+        0.0245,
+        0.0317
+      ],
+      "extent": 0.1422
+    },
+    {
+      "source": "waveshare_mounting_plate_so101_v2.stl",
+      "obj": "waveshare_mounting_plate_so101_v2.obj",
+      "sourceTriangles": 1254,
+      "triangles": 174,
+      "bboxMin": [
+        -0.0255,
+        -0.021,
+        0.0
+      ],
+      "bboxMax": [
+        0.0255,
+        0.021,
+        0.0076
+      ],
+      "extent": 0.051
+    },
+    {
+      "source": "wrist_roll_follower_so101_v1.stl",
+      "obj": "wrist_roll_follower_so101_v1.obj",
+      "sourceTriangles": 28796,
+      "triangles": 4012,
+      "bboxMin": [
+        -0.0352,
+        -0.0242,
+        -0.0001
+      ],
+      "bboxMax": [
+        0.03,
+        0.0278,
+        0.1054
+      ],
+      "extent": 0.1054
+    },
+    {
+      "source": "wrist_roll_pitch_so101_v2.stl",
+      "obj": "wrist_roll_pitch_so101_v2.obj",
+      "sourceTriangles": 53994,
+      "triangles": 7518,
+      "bboxMin": [
+        -0.0271,
+        -0.02,
+        -0.0378
+      ],
+      "bboxMax": [
+        0.0352,
+        0.0157,
+        0.04
+      ],
+      "extent": 0.0778
+    }
+  ]
+}

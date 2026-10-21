@@ -111,5 +111,12 @@ namespace OmniBot.VR.Control
         public string Imu;
         public string JointStates;
         public List<string> Images = new List<string>();
+
+        // Optional perception topics for the SLAM map panel. Blank fields fall
+        // back to the OmniBot names (/map, /scan, Nav2 costmaps). OHH-228.
+        public string Map;
+        public string Scan;
+        public string GlobalCostmap;
+        public string LocalCostmap;
     }
 }
