@@ -1,0 +1,19 @@
+{
+    "name": "OmniBot.VR.TelemetryHudPlayModeTests",
+    "rootNamespace": "OmniBot.VR.Tests",
+    "references": [
+        "Ohho.TelemetryHud"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -50,6 +50,25 @@ namespace OmniBot.VR.Video
         /// <summary>Fires when the HUD transport label changes.</summary>
         public event Action<string> OnTransportChanged;
 
+        /// <summary>True after at least one decoded frame on the current camera.</summary>
+        public bool HasVideoFrame { get; private set; }
+
+        /// <summary>Realtime clock of the last decoded frame. Video age is now minus this.</summary>
+        public double LastVideoFrameTime { get; private set; }
+
+        /// <summary>ROS topic of the camera currently selected, or null.</summary>
+        public string CurrentCameraTopic
+        {
+            get
+            {
+                if (_cameras == null || _cameras.Count == 0) return null;
+                int idx = _currentIndex;
+                if (idx < 0) idx = 0;
+                if (idx >= _cameras.Count) idx = _cameras.Count - 1;
+                return _cameras[idx];
+            }
+        }
+
         // ── Unity lifecycle ────────────────────────────────────────────────────
         private void Start()
         {
@@ -84,6 +103,7 @@ namespace OmniBot.VR.Video
             _profile = profile;
             _cameras = profile?.Topics?.Images ?? new List<string>();
             _currentIndex = 0;
+            HasVideoFrame = false;
             StartCurrentCamera();
         }
 
@@ -128,6 +148,7 @@ namespace OmniBot.VR.Video
             int generation = _generation;
             _activeSource?.Dispose();
             _activeSource = null;
+            HasVideoFrame = false;
 
             if (_cameras.Count == 0)
             {
@@ -222,6 +243,8 @@ namespace OmniBot.VR.Video
 
         private void OnVideoFrame(Texture2D frame)
         {
+            HasVideoFrame = true;
+            LastVideoFrameTime = Time.realtimeSinceStartupAsDouble;
             if (displayImage != null)
             {
                 displayImage.color = Color.white; // full brightness once streaming

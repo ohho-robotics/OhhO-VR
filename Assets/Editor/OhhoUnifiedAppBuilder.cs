@@ -601,6 +601,15 @@ namespace OmniBot.VR.Editor
             var mode = MakeText("Mode Text", left.transform, "mode: —", 22, TextMain, TextAlignmentOptions.MidlineLeft);
             Place(mode.rectTransform, new Vector2(0, 1), new Vector2(480, 30), new Vector2(20, -520));
 
+            var telemetryPanel = MakePanel("Telemetry V2", page.transform, new Color(0.04f, 0.06f, 0.10f, 0.94f));
+            Place(telemetryPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 0.5f), new Vector2(680, 860), new Vector2(40, 0));
+            var telemetryBody = MakeText("Telemetry Body", telemetryPanel.transform, "telemetry", 16, TextMain, TextAlignmentOptions.TopLeft);
+            telemetryBody.richText = true;
+            telemetryBody.enableWordWrapping = true;
+            Place(telemetryBody.rectTransform, new Vector2(0, 0), new Vector2(650, 760), new Vector2(14, 16));
+            var telemetryMode = MakeButton("Telemetry Mode", telemetryPanel.transform, "Expanded", 20, Cyan, Color.black);
+            Place(telemetryMode.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(180, 44), new Vector2(-12, -12));
+
             var hints = MakeText("Hints Text", left.transform, "", 19, TextMut, TextAlignmentOptions.TopLeft);
             hints.enableWordWrapping = true;
             Place(hints.rectTransform, new Vector2(0, 0), new Vector2(480, 180), new Vector2(20, 120));
@@ -651,6 +660,9 @@ namespace OmniBot.VR.Editor
             hso.FindProperty("velocityText").objectReferenceValue = vel;
             hso.FindProperty("armText").objectReferenceValue = arm;
             hso.FindProperty("modeText").objectReferenceValue = mode;
+            hso.FindProperty("telemetryBody").objectReferenceValue = telemetryBody;
+            hso.FindProperty("telemetryModeButton").objectReferenceValue = telemetryMode;
+            hso.FindProperty("telemetryModeLabel").objectReferenceValue = telemetryMode.GetComponentInChildren<TMP_Text>();
 
             hso.FindProperty("startRecordingButton").objectReferenceValue = startRec;
             hso.FindProperty("stopSaveButton").objectReferenceValue = stopSave;
