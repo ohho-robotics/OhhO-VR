@@ -81,7 +81,7 @@ Not in this repository. There is no visionOS target and no Swift project here. T
 
 ## 4. Edit-mode tests
 
-The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (59 tests in namespace `OmniBot.VR.Tests`). CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
+The NUnit fixtures are in `Assets/Scripts/Editor/Tests/` (59 tests in namespace `OmniBot.VR.Tests`). Feature fixtures under `Assets/Scripts/Detection/Editor/` and `Assets/Scripts/AR/Editor/` use that same namespace and the same `OmniBot.VR.Tests` filter. CI skips them until the Unity licence secrets are set. Run them locally in batch mode.
 
 CI runs these edit-mode tests with GameCI (`.github/workflows/unity-tests.yml`) once three repository secrets are set at Settings → Secrets and variables → Actions (https://github.com/ohho-robotics/OhhO-VR/settings/secrets/actions): `UNITY_LICENSE` (the full contents of a Unity personal licence `.ulf` file, e.g. `C:\ProgramData\Unity\Unity_lic.ulf` on Windows), `UNITY_EMAIL` and `UNITY_PASSWORD` (the Unity ID account that owns that licence). Until they are set the workflow skips the Unity steps and passes.
 
@@ -270,7 +270,9 @@ Cloud sim ([OHH-216](https://linear.app/ohho-robotics/issue/OHH-216)), AprilTag 
 │   │   │   ├── ConnectionManager.cs # Connection lifecycle (singleton)
 │   │   │   ├── VRGraphicsBoost.cs   # 1.5× resolution + MSAA + FFR + 90 Hz
 │   │   │   └── RobotConfig.cs      # All constants
+│   │   ├── AR/                 # 1:1 twin overlay, robot-anchored HUD, manual placement
 │   │   ├── Control/            # RobotProfile, TeleopController, drive/manip schemes
+│   │   ├── Detection/          # AprilTag robot pose (see Assets/Scripts/AR/HOOKUP.md)
 │   │   ├── Input/
 │   │   │   ├── ArmIKSolver.cs      # CCD IK solver (pure C#)
 │   │   │   ├── GestureDetector.cs  # OVR hand tracking
@@ -308,6 +310,12 @@ Cloud sim ([OHH-216](https://linear.app/ohho-robotics/issue/OHH-216)), AprilTag 
 | Arm not moving | Toggle arm enable with left-hand thumbs-up, check `/arm/enable` topic |
 | UI looks low-res | `VRGraphicsBoost` sets 1.5× eye resolution at startup; check it exists on `[OhhO VR App]` |
 | Text renders magenta | The TMP font materials use `TextMeshPro/Distance Field`; if they regress, re-assign `TextMeshPro/Distance Field` to the LiberationSans SDF materials |
+
+---
+
+## 14. AR mode
+
+AR mode draws a 1:1 twin on the detected robot and a HUD that stays on that robot. The HUD shows joint angles, planar speed, yaw rate, and tag confidence. When detection is not locked, `PlaceInFrontOf` or `PlaceManually` places the twin. The overlay only subscribes; it does not publish teleop commands. It is not in `Assets/scene1.unity`. Hookup is `Assets/Scripts/AR/HOOKUP.md`.
 
 ---
 
