@@ -68,6 +68,14 @@ jobs:
           customImage: unityci/editor:ubuntu-6000.5.2f1-android-3
           testMode: editmode
           artifactsPath: test-results
+          # Unity 6000.5 batchmode on a runner with no audio device disables the
+          # enhanced audio foundation's realtime thread while a mix is still
+          # running, then aborts before editmode-results.xml exists:
+          # ADTM: Attempting to update control while a mix is ongoing, but
+          # realtime thread is disabled will lead to a deadlock.
+          # -enhancedAudioFoundation 0 keeps classic audio for this editor
+          # process. It does not change the Quest player's audio settings.
+          customParameters: -enhancedAudioFoundation 0
 
       - uses: actions/upload-artifact@v4
         if: always() && steps.secrets.outputs.available == 'true'
