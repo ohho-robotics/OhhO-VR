@@ -1,5 +1,5 @@
 {
-    "name": "OmniBot.VR.PlayModeTests",
+    "name": "OmniBot.VR.TelemetryHudPlayModeTests",
     "rootNamespace": "OmniBot.VR.Tests",
     "references": [
         "Ohho.TelemetryHud"
