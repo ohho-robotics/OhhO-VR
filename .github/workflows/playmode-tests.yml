@@ -1,0 +1,150 @@
+name: Play-mode tests
+
+# OHH-230. Separate from unity-tests.yml (edit mode) and from release.yml.
+# Play-mode sources live in Tests/PlayMode and are copied into Assets only
+# for this job. That copy is not committed.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  playmode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+      UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+    steps:
+      - name: Check whether Unity licence secrets are set
+        id: secrets
+        shell: bash
+        run: |
+          if [ -n "$UNITY_LICENSE" ] && [ -n "$UNITY_EMAIL" ] && [ -n "$UNITY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Play-mode tests were skipped because the secrets are not set. See docs/test-plan.md."
+          fi
+
+      - name: Free disk space
+        if: steps.secrets.outputs.available == 'true'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.available == 'true'
+
+      - name: Stage play-mode tests into Assets
+        if: steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: bash Tests/PlayMode/stage-into-assets.sh
+
+      - uses: actions/cache@v4
+        if: steps.secrets.outputs.available == 'true'
+        with:
+          path: Library
+          key: Library-playmode-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**', 'Tests/PlayMode/**') }}
+          restore-keys: Library-playmode-
+
+      # Meta XR Core editor scripts reference UnityEditor.Android, so the
+      # editor image needs the Android module. Same image as edit-mode CI.
+      - uses: game-ci/unity-test-runner@v4
+        id: tests
+        if: steps.secrets.outputs.available == 'true'
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 6000.5.2f1
+          customImage: unityci/editor:ubuntu-6000.5.2f1-android-3
+          testMode: playmode
+          artifactsPath: playmode-test-results
+          customParameters: -testFilter OmniBot.VR.PlayModeTests
+
+      # The runner's artifactsPath output is empty when Unity is cancelled, and
+      # upload-artifact then fails with "path" required. Upload the directory
+      # the runner was given, and make sure that directory exists either way.
+      - name: Ensure play-mode artifact directory
+        if: always() && steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: |
+          mkdir -p playmode-test-results
+          if [ -z "$(find playmode-test-results -type f -print -quit)" ]; then
+            printf '%s\n' 'Unity play-mode runner produced no artifacts.' > playmode-test-results/no-results.txt
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.secrets.outputs.available == 'true'
+        with:
+          name: playmode-test-results
+          path: playmode-test-results
+          if-no-files-found: warn
+
+  rosbridge-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start disposable rosbridge
+        shell: bash
+        run: docker compose -f Tests/PlayMode/docker/compose.yml up -d --wait
+
+      - name: Rosbridge protocol smoke
+        shell: bash
+        run: python3 Tests/PlayMode/docker/smoke_rosbridge.py --url ws://127.0.0.1:9090 --timeout 20
+
+      # Unity Linux batchmode against this broker is the next step. A standalone
+      # player build is heavier and is not run here. RosBridgeDockerPlayModeTests
+      # returns without a socket until OHHO_ROSBRIDGE_URL is set.
+      - name: TODO Unity batchmode against rosbridge
+        shell: bash
+        run: |
+          cat <<'EOF'
+          TODO(OHH-230): run ROSBridgeClient in the Editor against the broker above.
+          Do not point OHHO_ROSBRIDGE_URL at a live robot. The test publishes only /ohho/ci_smoke.
+
+          bash Tests/PlayMode/stage-into-assets.sh
+          export OHHO_ROSBRIDGE_URL=ws://127.0.0.1:9090
+          unity -batchmode -nographics -projectPath "$GITHUB_WORKSPACE" \
+            -runTests -testPlatform playmode \
+            -testFilter OmniBot.VR.PlayModeTests.RosBridgeDockerPlayModeTests \
+            -testResults "$GITHUB_WORKSPACE/rosbridge-unity-results.xml" \
+            -logFile "$GITHUB_WORKSPACE/rosbridge-unity.log"
+
+          GameCI equivalent, on this workflow's playmode job, once the url is exported
+          into that job's environment:
+            testMode: playmode
+            customParameters: -testFilter OmniBot.VR.PlayModeTests.RosBridgeDockerPlayModeTests
+            customImage: unityci/editor:ubuntu-6000.5.2f1-android-3
+
+          A Linux standalone player (not the Editor batchmode run above) is still to do:
+            unity -batchmode -nographics -projectPath "$GITHUB_WORKSPACE" \
+              -buildTarget StandaloneLinux64 -quit
+          That player build is not required to execute the Editor play-mode test.
+          EOF
+
+      - name: Show rosbridge logs
+        if: failure()
+        shell: bash
+        run: docker compose -f Tests/PlayMode/docker/compose.yml logs
+
+      - name: Stop rosbridge
+        if: always()
+        shell: bash
+        run: docker compose -f Tests/PlayMode/docker/compose.yml down
