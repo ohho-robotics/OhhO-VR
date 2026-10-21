@@ -26,6 +26,7 @@ namespace OmniBot.VR.Tests
         [TearDown]
         public void TearDown()
         {
+            SimulatedTwinPlaceholder.TwinPresentOverride = null;
             RobotLinkFactory.Select(RobotLinkTarget.RosBridge);
         }
 
@@ -381,11 +382,12 @@ namespace OmniBot.VR.Tests
         [Test]
         public void Host_BuildsPlaceholderRoomAndTracksPose()
         {
-            Assert.IsFalse(SimulatedTwinPlaceholder.IsUnityTwinPresent());
-
+            // Twin types are loaded in this project. Force the placeholder fallback.
+            SimulatedTwinPlaceholder.TwinPresentOverride = false;
             var go = new GameObject("in-headset-sim-test");
             try
             {
+                Assert.IsFalse(SimulatedTwinPlaceholder.IsUnityTwinPresent());
                 var host = go.AddComponent<InHeadsetSimHost>();
                 Assert.IsTrue(host.Sim.IsConnected);
                 Assert.IsNotNull(host.GetComponentInChildren<SimulatedTwinPlaceholder>());
@@ -411,6 +413,7 @@ namespace OmniBot.VR.Tests
             }
             finally
             {
+                SimulatedTwinPlaceholder.TwinPresentOverride = null;
                 UnityEngine.Object.DestroyImmediate(go);
             }
         }
