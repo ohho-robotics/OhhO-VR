@@ -1,0 +1,116 @@
+name: Beta feedback
+description: One external Quest beta session against the sim. Same fields as docs/beta/feedback-form.md.
+title: "[Beta] "
+labels:
+  - beta-feedback
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read docs/beta/README.md before the session. One issue per session.
+        Prefer the headset log for time-to-first-drive (`since_connect_s` on the `[FirstDrive]` line).
+        `tools/beta_triage.py` can read the markdown GitHub stores for this form.
+  - type: input
+    id: tester_id
+    attributes:
+      label: Tester id
+      description: The id from the invite. Not a legal name.
+      placeholder: tester-3
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: Date
+      placeholder: YYYY-MM-DD
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: APK file name you installed.
+      placeholder: OhhO-vr-rc.apk
+    validations:
+      required: true
+  - type: dropdown
+    id: sim
+    attributes:
+      label: Sim
+      description: local is Gazebo you or Varun started. cloud is a rosbridge host Varun sent. This repo has no public cloud URL.
+      options:
+        - local
+        - cloud
+        - unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: completed_first_drive
+    attributes:
+      label: Completed first drive
+      description: yes only if the headset logged [FirstDrive] or you are sure a stick command was sent. The Gazebo model rolling is a separate question.
+      options:
+        - "yes"
+        - "no"
+    validations:
+      required: true
+  - type: input
+    id: time_to_first_drive_s
+    attributes:
+      label: Time to first drive (seconds)
+      description: since_connect_s from the [FirstDrive] line. Leave blank if you never got one.
+      placeholder: "45"
+  - type: dropdown
+    id: time_source
+    attributes:
+      label: Time source
+      options:
+        - headset-log
+        - self-timed
+        - not-reached
+    validations:
+      required: true
+  - type: textarea
+    id: crashes
+    attributes:
+      label: Crashes
+      description: Write "none" if the app stayed up. Otherwise what the headset did.
+      placeholder: none
+    validations:
+      required: true
+  - type: input
+    id: crash_count
+    attributes:
+      label: Crash count
+      description: Integer. 0 if there were none.
+      placeholder: "0"
+    validations:
+      required: true
+  - type: dropdown
+    id: comfort
+    attributes:
+      label: Comfort
+      description: quit means you stopped because you felt unwell.
+      options:
+        - fine
+        - mild
+        - quit
+    validations:
+      required: true
+  - type: textarea
+    id: comfort_notes
+    attributes:
+      label: Comfort notes
+      placeholder: Short. Eyes, stomach, neck, heat.
+  - type: textarea
+    id: confusion
+    attributes:
+      label: Confusion points
+      description: One point per line. Leave empty if nothing was unclear.
+      placeholder: |
+        The IP field already said 192.168.1.101
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything else. Include whether the status dot turned green and whether the Gazebo model moved.

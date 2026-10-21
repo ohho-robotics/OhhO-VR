@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using OmniBot.VR.Core.Platform;
+using OmniBot.VR.Mapping;
 
 namespace OmniBot.VR.Control
 {
@@ -136,6 +137,10 @@ namespace OmniBot.VR.Control
                 Odom          = baseDof > 0 ? "/odom" : "",
                 Imu           = "/imu/data",
                 JointStates   = jointStates,
+                Map           = MapTopics.DefaultMap,
+                Scan          = MapTopics.DefaultScan,
+                GlobalCostmap = MapTopics.DefaultGlobalCostmap,
+                LocalCostmap  = MapTopics.DefaultLocalCostmap,
             };
             // Image topics by category (mirrors deriveSensors image list)
             if (category == "mobile-manipulator")

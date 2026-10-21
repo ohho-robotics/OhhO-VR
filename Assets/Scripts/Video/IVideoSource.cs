@@ -6,7 +6,7 @@ namespace OmniBot.VR.Video
     /// <summary>
     /// Abstraction over a robot camera video transport — one implementation per
     /// delivery method (MJPEG via <c>web_video_server</c>, WebRTC via
-    /// <c>com.unity.webrtc</c>). The <see cref="CameraFeedController"/> picks the
+    /// <c>com.unity.webrtc</c> against ohho_webrtc). The <see cref="CameraFeedController"/> picks the
     /// best available source per camera topic and decouples the UI from the
     /// transport, so swapping MJPEG → WebRTC is a source swap, not a UI rewrite.
     ///
@@ -35,5 +35,11 @@ namespace OmniBot.VR.Video
 
         /// <summary>Stop the stream and release transport resources.</summary>
         void Stop();
+
+        /// <summary>
+        /// Main-thread pump. WebRTC uses this to dispatch signaling messages.
+        /// MJPEG does the work inside its coroutine and leaves this empty.
+        /// </summary>
+        void Tick();
     }
 }
