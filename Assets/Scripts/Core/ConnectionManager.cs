@@ -58,7 +58,9 @@ namespace OmniBot.VR.Core
             { RobotConfig.TOPIC_VR_RECORD_STOP,  "std_msgs/Bool"              },
         };
 
-        // Subscriber topic → ROS type string
+        // Topics the live HUD and recorder subscribe to themselves.
+        // Disconnect() tears those ROS subscriptions down. ConnectionManager
+        // must not register placeholder callbacks (OHH-192).
         private static readonly Dictionary<string, string> SubscribeTopics = new Dictionary<string, string>
         {
             { RobotConfig.TOPIC_ODOM,                "nav_msgs/Odometry"      },
@@ -147,25 +149,17 @@ namespace OmniBot.VR.Core
 
         private void HandleConnected()
         {
-            Debug.Log("[ConnectionManager] Connected — advertising and subscribing.");
+            Debug.Log("[ConnectionManager] Connected — advertising publish topics.");
 
             // Save last-known connection details
             PlayerPrefs.SetString(PrefKeyIp, CurrentIp);
             PlayerPrefs.SetInt(PrefKeyPort, CurrentPort);
             PlayerPrefs.Save();
 
-            // Advertise all publish topics
+            // Advertise all publish topics. Feature scripts subscribe themselves.
             foreach (var kvp in PublishTopics)
             {
                 ROSBridgeClient.Instance.Advertise(kvp.Key, kvp.Value);
-            }
-
-            // Subscribe to all receive topics (callbacks registered elsewhere)
-            foreach (var kvp in SubscribeTopics)
-            {
-                // Only send the subscribe op if not already registered
-                // (ROSBridgeClient.Subscribe handles deduplication)
-                ROSBridgeClient.Instance.Subscribe(kvp.Key, kvp.Value, _ => { /* placeholder; actual handlers added by feature scripts */ });
             }
 
             OnConnectionStateChanged?.Invoke(true);

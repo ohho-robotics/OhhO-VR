@@ -98,7 +98,7 @@ namespace OmniBot.VR.Editor
                 eventObj.AddComponent<OVRInputModule>();
             }
 
-            // 4. Managers
+            // Managers only. Do not attach archived control or HUD scripts from Archive/legacy-control.
             var managerRoot = new GameObject("AppManagers");
             managerRoot.AddComponent<ROSConnectionWrapper>();
             managerRoot.AddComponent<DirectConnectionWrapper>();

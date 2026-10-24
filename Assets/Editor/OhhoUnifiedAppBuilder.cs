@@ -686,6 +686,7 @@ namespace OmniBot.VR.Editor
             var bootstrap = GameObject.Find("[OhhO VR App]");
             if (bootstrap == null) return;
 
+            // Live input and recording only. Do not attach archived publishers from Archive/legacy-control.
             if (bootstrap.GetComponent<GestureDetector>() == null) bootstrap.AddComponent<GestureDetector>();
             if (bootstrap.GetComponent<ProfileDrivenRecorder>() == null) bootstrap.AddComponent<ProfileDrivenRecorder>();
             if (bootstrap.GetComponent<VRGraphicsBoost>() == null) bootstrap.AddComponent<VRGraphicsBoost>();

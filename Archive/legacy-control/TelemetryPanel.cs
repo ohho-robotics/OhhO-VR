@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -16,6 +21,7 @@ namespace OmniBot.VR.UI
     /// Subscriptions are added on top of ConnectionManager's baseline subscriptions,
     /// so each panel receives its own callbacks. UI refresh is rate-limited to 10 Hz.
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class TelemetryPanel : MonoBehaviour
     {
         // ── Inspector — Odometry ──────────────────────────────────────────────
@@ -313,3 +319,4 @@ namespace OmniBot.VR.UI
         }
     }
 }
+#endif

@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using UnityEngine;
 using Newtonsoft.Json;
 using OmniBot.VR.Core;
@@ -12,6 +17,7 @@ namespace OmniBot.VR.Input
     /// (thumb pointing upward while other fingers are curled).
     /// When the arm is disabled, no joint commands are published.
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class HandTrackingArmController : MonoBehaviour
     {
         // ── Inspector fields ─────────────────────────────────────────────────
@@ -283,3 +289,4 @@ namespace OmniBot.VR.Input
         }
     }
 }
+#endif

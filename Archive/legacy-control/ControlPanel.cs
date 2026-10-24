@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -14,6 +19,7 @@ namespace OmniBot.VR.UI
     ///   - Emergency stop (large red button)
     ///   - Cancelling the current mission
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class ControlPanel : MonoBehaviour
     {
         // ── Inspector — Mode buttons ──────────────────────────────────────────
@@ -166,3 +172,4 @@ namespace OmniBot.VR.UI
         }
     }
 }
+#endif

@@ -1,3 +1,8 @@
+// OHH-192: quarantined legacy script. Unity does not import Archive/.
+// OHHO_INCLUDE_LEGACY is not a player or editor define, so copying this
+// file back under Assets/ does not compile it into the build.
+// Live publishers: Control/TeleopController.cs, Control/Drive/*, Control/Manip/*.
+#if OHHO_INCLUDE_LEGACY
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -12,6 +17,7 @@ namespace OmniBot.VR.UI
     /// Left controller B button   → toggle Main panel.
     /// Right controller A button  → cycle through all panels.
     /// </summary>
+    [System.Obsolete("OHH-192: archived legacy control path. Live teleop is TeleopController + Drive + Manip.")]
     public class HUDManager : MonoBehaviour
     {
         // ── Panel type enumeration ───────────────────────────────────────────
@@ -207,3 +213,4 @@ namespace OmniBot.VR.UI
         }
     }
 }
+#endif
