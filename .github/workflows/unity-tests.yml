@@ -59,6 +59,16 @@ jobs:
           key: Library-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: Library-
 
+      # Unity 6000.5 aborts batchmode on this image after licensing:
+      # "ADTM: Attempting to update control while a mix is ongoing, but
+      # realtime thread is disabled will lead to a deadlock."
+      # The image has no realtime audio thread. Skip ADTM for this run only.
+      # ProjectSettings/AudioManager.asset stays m_DisableAudio: 0 in git.
+      - name: Disable Unity audio for headless batchmode
+        if: steps.secrets.outputs.available == 'true'
+        shell: bash
+        run: python3 .github/workflows/release_support.py disable-batchmode-audio
+
       # Meta XR Core editor scripts use UnityEditor.Android without an
       # UNITY_ANDROID guard, so the editor image needs the Android module.
       - uses: game-ci/unity-test-runner@v4
